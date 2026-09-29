@@ -158,13 +158,14 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
   // Derive rich, structured clinical data even if reading legacy or newly uploaded documents
   const parsedData = useMemo(() => {
     if (!activeDoc) return null;
+    const isPrescription = activeDoc.type === 'Prescription';
     const raw = activeDoc.rawExtractedText || activeDoc.findings || '';
-    const parsed = parsePrescriptionText(raw);
+    const parsed = isPrescription ? parsePrescriptionText(raw) : { medicines: [], patient: {}, formattedMedicinesList: [], clinicalDescription: '', handwrittenText: '' };
 
     const structuredMeds: StructuredMedicine[] =
       activeDoc.structuredMedicines && activeDoc.structuredMedicines.length > 0
         ? activeDoc.structuredMedicines
-        : parsed.medicines;
+        : (isPrescription ? parsed.medicines : []);
 
     const patientDetails: OCRPatientDetails = {
       ...parsed.patient,
@@ -174,12 +175,14 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
     const displayMeds: string[] =
       activeDoc.medicines && activeDoc.medicines.length > 0
         ? activeDoc.medicines
-        : parsed.formattedMedicinesList;
+        : (isPrescription ? parsed.formattedMedicinesList : []);
 
     const cleanFindings =
-      parsed.clinicalDescription && parsed.clinicalDescription !== 'Clinical consultation recorded'
-        ? parsed.clinicalDescription
-        : cleanOCRNoise(activeDoc.findings);
+      activeDoc.findings && activeDoc.findings !== 'No findings extracted'
+        ? activeDoc.findings
+        : (parsed.clinicalDescription && parsed.clinicalDescription !== 'Clinical consultation recorded'
+            ? parsed.clinicalDescription
+            : cleanOCRNoise(activeDoc.findings));
 
     const handwrittenText =
       activeDoc.handwrittenText ||
@@ -259,12 +262,12 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
 
     const rawType = result.documentType.toLowerCase();
     let docType: OCRDocument['type'] = 'Prescription';
-    if (rawType.includes('lab') || rawType.includes('blood') || rawType.includes('report')) {
-      docType = 'Lab Report';
+    if (rawType.includes('scan') || rawType.includes('mri') || rawType.includes('ct') || rawType.includes('radiol') || rawType.includes('xray')) {
+      docType = 'Scan Report';
     } else if (rawType.includes('discharge')) {
       docType = 'Discharge Summary';
-    } else if (rawType.includes('scan') || rawType.includes('radiol') || rawType.includes('xray')) {
-      docType = 'Scan Report';
+    } else if (rawType.includes('lab') || rawType.includes('blood') || rawType.includes('report') || rawType.includes('test')) {
+      docType = 'Lab Report';
     }
 
     const newId = 'doc-' + Math.floor(100 + Math.random() * 900);

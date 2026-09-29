@@ -93,15 +93,43 @@ def bytes_to_pil(data: bytes, filename: str = "", content_type: str = "") -> Ima
     if is_pdf:
         if _PDF_BACKEND == "pymupdf":
             doc = _fitz.open(stream=data, filetype="pdf")
-            page = doc[0]
-            mat = _fitz.Matrix(2.0, 2.0)  # 2× zoom for better OCR
-            pix = page.get_pixmap(matrix=mat, alpha=False)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            mat = _fitz.Matrix(2.0, 2.0)  # 2× zoom for sharp OCR
+            images = []
+            max_pages = min(len(doc), 3)  # Support up to 3 pages for MRI/lab reports
+            for page_idx in range(max_pages):
+                page = doc[page_idx]
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+                images.append(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
             doc.close()
-            return img
+
+            if not images:
+                raise ValueError("PDF document contains no readable pages.")
+            if len(images) == 1:
+                return images[0]
+
+            total_height = sum(im.height for im in images)
+            max_width = max(im.width for im in images)
+            combined = Image.new("RGB", (max_width, total_height), (255, 255, 255))
+            y_offset = 0
+            for im in images:
+                combined.paste(im, (0, y_offset))
+                y_offset += im.height
+            return combined
+
         elif _PDF_BACKEND == "pdf2image":
-            pages = _pdf2image_convert(data, dpi=200, first_page=1, last_page=1)
-            return pages[0].convert("RGB")
+            pages = _pdf2image_convert(data, dpi=200, first_page=1, last_page=2)
+            if not pages:
+                raise ValueError("PDF document contains no readable pages.")
+            if len(pages) == 1:
+                return pages[0].convert("RGB")
+            total_height = sum(p.height for p in pages)
+            max_width = max(p.width for p in pages)
+            combined = Image.new("RGB", (max_width, total_height), (255, 255, 255))
+            y_offset = 0
+            for p in pages:
+                combined.paste(p, (0, y_offset))
+                y_offset += p.height
+            return combined
         else:
             raise RuntimeError(
                 "No PDF processing library installed. "
@@ -127,6 +155,10 @@ def bytes_to_pil(data: bytes, filename: str = "", content_type: str = "") -> Ima
             logger.warning("[OCR] PyMuPDF fallback decode failed (%s).", fitz_err)
 
     raise ValueError(f"Unable to decode uploaded image file '{filename}'. Format not recognized.")
+
+
+# Alias to prevent any NameError
+pdf_bytes_to_pil = bytes_to_pil
 
 
 # ──────────────────────────────────────────────────────────
@@ -418,9 +450,27 @@ def _normalize_response(
     """Map the 8-tuple from analyze_prescription() to a clean JSON response."""
     is_prescription = "prescription" in (predicted_label or "").lower()
 
+    # Check if structured VLM JSON is available from debug_text
+    vlm_json = None
+    if "=== Parsed JSON ===" in (debug_text or ""):
+        try:
+            json_str = debug_text.split("=== Parsed JSON ===")[1].strip()
+            vlm_json = json.loads(json_str)
+        except Exception:
+            pass
+
     # Extract structured medicines from Markdown table if available
     structured_meds = _parse_structured_medicines_table(medicines_table)
     medicines_list = _parse_medicine_text(medicines_table)
+
+    if vlm_json and isinstance(vlm_json.get("medicines"), list) and vlm_json["medicines"]:
+        if not structured_meds:
+            structured_meds = vlm_json["medicines"]
+        if not medicines_list:
+            medicines_list = [
+                f"{m.get('medicine_name', '')} {m.get('dosage', '')} {m.get('frequency', '')}".strip()
+                for m in vlm_json["medicines"] if m.get('medicine_name')
+            ]
 
     # Run raw text parser for fallback and enrichment
     extracted_data = _extract_clinical_data_from_raw_text(extracted_text or handwritten_text)
@@ -442,7 +492,7 @@ def _normalize_response(
         clean_table_md = "\n".join(rows)
 
     # Doctor name
-    doctor_name = extracted_data["patient_info"].get("doctorName", "")
+    doctor_name = (vlm_json.get("doctor_name") if vlm_json else "") or extracted_data["patient_info"].get("doctorName", "")
     if not doctor_name:
         for line in (extracted_text or "").splitlines():
             if any(kw in line.lower() for kw in ["dr.", "doctor", "dr ", "md", "mbbs"]):
@@ -451,27 +501,55 @@ def _normalize_response(
 
     # Clean handwritten text
     clean_handwritten = _clean_ocr_noise(handwritten_text)
-    if not clean_handwritten and extracted_data["handwritten_lines"]:
+    if vlm_json and vlm_json.get("handwritten_text"):
+        clean_handwritten = vlm_json["handwritten_text"]
+    elif not clean_handwritten and extracted_data["handwritten_lines"]:
         clean_handwritten = "\n".join(extracted_data["handwritten_lines"])
     elif not clean_handwritten and medicines_list:
         clean_handwritten = "\n".join(medicines_list)
 
-    # Diagnosis / Clinical Findings
-    diagnosis = extracted_data["clinical_description"]
+    # Clinical description & Diagnosis
+    clinical_desc = (vlm_json.get("clinical_description") if vlm_json else "") or extracted_data["clinical_description"]
+    diagnosis = (vlm_json.get("diagnosis") if vlm_json else "") or clinical_desc
     if not diagnosis:
         diagnosis = clean_handwritten[:300] if clean_handwritten else _clean_ocr_noise(extracted_text)[:300]
 
+    # Document type & prescription flag
+    doc_type = (vlm_json.get("document_type") if vlm_json else "") or predicted_label or "Prescription"
+    is_prescription = vlm_json.get("is_prescription", "prescription" in doc_type.lower()) if vlm_json else ("prescription" in doc_type.lower())
+
+    if not is_prescription:
+        # Diagnostic reports (MRI, CT, scan, lab) do not contain prescription medicines
+        # Keep medicines empty unless explicitly listed in vlm_json
+        vlm_meds = vlm_json.get("medicines", []) if vlm_json else []
+        structured_meds = vlm_meds if (isinstance(vlm_meds, list) and len(vlm_meds) > 0 and vlm_meds[0].get("medicine_name")) else []
+        medicines_list = [f"{m.get('medicine_name', '')} {m.get('dosage', '')}".strip() for m in structured_meds] if structured_meds else []
+        clean_table_md = "*No medications prescribed in diagnostic scan/lab report.*" if not structured_meds else clean_table_md
+        clean_handwritten = (vlm_json.get("handwritten_text") if vlm_json else "") or diagnosis or clinical_desc
+
+    # Patient info
+    patient_info = extracted_data["patient_info"]
+    if vlm_json:
+        if vlm_json.get("patient_name"): patient_info["name"] = vlm_json["patient_name"]
+        if vlm_json.get("date"): patient_info["date"] = vlm_json["date"]
+        if vlm_json.get("age"): patient_info["age"] = str(vlm_json["age"])
+        if vlm_json.get("gender"): patient_info["gender"] = vlm_json["gender"]
+        if vlm_json.get("weight"): patient_info["weight"] = str(vlm_json["weight"])
+        if doctor_name: patient_info["doctorName"] = doctor_name
+        if vlm_json.get("vitals"): patient_info["vitals"] = vlm_json["vitals"]
+        if clinical_desc: patient_info["clinicalDescription"] = clinical_desc
+
     return {
         "status": "success",
-        "document_type": predicted_label if predicted_label else "medical prescription",
+        "document_type": doc_type,
         "is_prescription": is_prescription,
         "confidence": round(float(confidence), 3),
         "extracted_text": (extracted_text or "").strip(),
         "doctor_name": doctor_name or "Not detected",
         "medicines": medicines_list,
         "structured_medicines": structured_meds,
-        "patient_info": extracted_data["patient_info"],
-        "clinical_description": extracted_data["clinical_description"],
+        "patient_info": patient_info,
+        "clinical_description": clinical_desc,
         "diagnosis": diagnosis,
         "handwritten_text": clean_handwritten,
         "raw_medicines_table": clean_table_md,
@@ -559,11 +637,7 @@ class OCRHandler(BaseHTTPRequestHandler):
                         filename, len(file_data), file_ct)
 
             # ── Convert to PIL Image ──────────────────────────────
-            if filename.endswith(".pdf") or "pdf" in file_ct:
-                logger.info("[OCR] Converting PDF to image...")
-                pil_image = pdf_bytes_to_pil(file_data)
-            else:
-                pil_image = Image.open(io.BytesIO(file_data)).convert("RGB")
+            pil_image = bytes_to_pil(file_data, filename, file_ct)
 
             # ── Run OCR pipeline ─────────────────────────────────
             _ensure_ocr_loaded()

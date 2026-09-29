@@ -258,9 +258,11 @@ def query_gemini_vision(image):
         return None, "No GEMINI_API_KEY found"
 
     img_b64 = pil_to_base64(image)
-    prompt = """You are an expert clinical pharmacist analyzing a doctor's handwritten/printed medical prescription slip.
-Carefully extract patient demographics, clinical description, vitals, doctor details, and all prescribed medications into JSON format:
+    prompt = """You are an expert clinical physician and medical AI analyzing a medical document (which may be a doctor's prescription slip, an MRI/CT scan report, an X-ray report, a lab test, or a discharge summary).
+Carefully extract all visible details into JSON format:
 {
+  "document_type": "Prescription" | "Scan Report" | "Lab Report" | "Discharge Summary" | "Medical Report",
+  "is_prescription": true,
   "doctor_name": "...",
   "patient_name": "...",
   "date": "...",
@@ -268,6 +270,7 @@ Carefully extract patient demographics, clinical description, vitals, doctor det
   "gender": "...",
   "weight": "...",
   "clinical_description": "...",
+  "diagnosis": "...",
   "vitals": "...",
   "handwritten_text": "...",
   "medicines": [
@@ -282,8 +285,16 @@ Carefully extract patient demographics, clinical description, vitals, doctor det
   ]
 }
 Requirements:
-- Extract all medicines (syrup, tablet, capsules, drops), doses (e.g. 4 mL, 3 mL, 500mg), frequencies (e.g. Q6H, TDS, BD, OD, SOS), and durations (e.g. 3 d, 5 d).
-- Extract any regional notes or instructions.
+- If this is a Scan Report (e.g. MRI, CT, X-Ray, Ultrasound, Radiology) or Lab Report:
+  * Set "document_type" to "Scan Report" (or "Lab Report").
+  * Set "is_prescription" to false.
+  * In "clinical_description", summarize the examination technique, body region studied, and significant findings.
+  * In "diagnosis", summarize the Impression, Conclusion, or Final Assessment.
+  * In "handwritten_text", copy or summarize the key clinical impression / remarks.
+  * If no medicines are prescribed, leave "medicines" as an empty list [].
+- If this is a Prescription:
+  * Set "document_type" to "Prescription" and "is_prescription" to true.
+  * Extract all medicines, doses (e.g. 4 mL, 500mg), frequencies (e.g. TDS, BD, OD, SOS), and durations (e.g. 3 d, 5 d).
 - Return ONLY the JSON object without markdown formatting."""
 
     payload = {
@@ -365,10 +376,14 @@ def analyze_prescription(image):
         handwritten_text = parsed_json.get("handwritten_text", "")
         medicines = parsed_json.get("medicines", [])
         medicines_table = format_medicines_table(medicines)
-        predicted_label = "medical prescription"
+        doc_type = parsed_json.get("document_type")
+        if not doc_type:
+            doc_type = "Prescription" if parsed_json.get("is_prescription", True) else "Scan Report"
+        predicted_label = doc_type
         confidence = 0.99
 
         summary_parts = []
+        if parsed_json.get("document_type"): summary_parts.append(f"Document Type: {parsed_json['document_type']}")
         if parsed_json.get("doctor_name"): summary_parts.append(f"Doctor: {parsed_json['doctor_name']}")
         if parsed_json.get("patient_name"): summary_parts.append(f"Name: {parsed_json['patient_name']}")
         if parsed_json.get("date"): summary_parts.append(f"Date: {parsed_json['date']}")
@@ -376,8 +391,9 @@ def analyze_prescription(image):
         if parsed_json.get("gender"): summary_parts.append(f"Gender: {parsed_json['gender']}")
         if parsed_json.get("weight"): summary_parts.append(f"Weight: {parsed_json['weight']}")
         if parsed_json.get("clinical_description"): summary_parts.append(f"Clinical Description: {parsed_json['clinical_description']}")
+        if parsed_json.get("diagnosis"): summary_parts.append(f"Diagnosis: {parsed_json['diagnosis']}")
         if parsed_json.get("vitals"): summary_parts.append(f"Vitals: {parsed_json['vitals']}")
-        if parsed_json.get("handwritten_text"): summary_parts.append(f"Advice:\n{parsed_json['handwritten_text']}")
+        if parsed_json.get("handwritten_text"): summary_parts.append(f"Advice / Findings:\n{parsed_json['handwritten_text']}")
         extracted_text = "\n".join(summary_parts)
 
     else:
