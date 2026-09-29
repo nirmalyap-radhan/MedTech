@@ -1,0 +1,63 @@
+# Core ML / HF stack
+torch>=2.1
+transformers>=4.42
+accelerate>=0.30
+sentencepiece>=0.2.0
+soundfile>=0.12
+librosa>=0.10
+# Bundles a small portable pre-built ffmpeg binary -- no system install
+# needed. core/config.py registers it on PATH automatically at import
+# time if no system ffmpeg is found, permanently fixing
+# "FileNotFoundError: [WinError 2] The system cannot find the file
+# specified" from transformers' local audio decoding (very common on
+# Windows, where a manual system-wide ffmpeg + PATH edit is easy to get
+# wrong or not take effect in the current shell).
+imageio-ffmpeg>=0.5.1
+# NOTE: pinned <2.0 because fasttext-wheel (used for text language-id below)
+# internally calls `np.array(probs, copy=False)`, which numpy>=2.0 turned
+# into a hard ValueError instead of the old "copy if needed" behavior.
+# This crashed every TTS auto-detect call with
+# "Unable to avoid copy while creating an array as requested."
+# All other packages in this file are fine with numpy 1.x.
+numpy>=1.24,<2.0
+
+# Text language-id backend (facebook/fasttext-language-identification).
+# `fasttext` itself has no prebuilt Windows wheels on PyPI and needs a C++
+# compiler to build from source. `fasttext-wheel` is a drop-in, API-identical
+# package that ships prebuilt wheels for Windows/Mac/Linux -- use this one,
+# not plain `fasttext`, on Windows.
+fasttext-wheel>=0.9.2
+huggingface_hub>=0.23
+
+# Text translation backend (facebook/nllb-200-distilled-600M, used by
+# core/translation.py). No new dependency needed -- it's a standard
+# transformers translation pipeline, already covered by `transformers`
+# and `sentencepiece` above (NLLB's tokenizer needs sentencepiece).
+
+# TTS backend
+# The DEFAULT TTS path is facebook/mms-tts-<iso3>, which is ungated and
+# runs on plain `transformers` (VitsModel) -- already covered above, so
+# nothing extra is needed for TTS to work.
+#
+# OPTIONAL: ai4bharat/indic-parler-tts gives noticeably better voices, but
+# it is a GATED repo (request access at
+# https://huggingface.co/ai4bharat/indic-parler-tts, then
+# `huggingface-cli login`) AND needs the `parler_tts` package, which isn't
+# on PyPI. Only install this if you want that upgrade -- the app falls
+# back to MMS automatically without it:
+#
+#     pip install git+https://github.com/huggingface/parler-tts.git
+
+# Demo UI. Pinned to the 5.x line specifically: some Gradio 6.x builds
+# have a regression where the Audio component's live recording waveform
+# is CPU-heavy enough to freeze the whole browser tab while recording
+# (github.com/gradio-app/gradio#12827, #6483). The workaround of disabling
+# that waveform (waveform_options=show_recording_waveform=False) trades
+# that bug for a WORSE one (#6801): recordings show "0:00 / 0:00" and
+# won't play. 5.x doesn't have the freeze regression to begin with, so no
+# workaround/trade-off is needed at all -- this pin is a real fix, not a
+# guess.
+gradio>=5.0,<6
+
+# Testing
+pytest>=8.0
