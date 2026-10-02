@@ -22,6 +22,9 @@ import json
 import logging
 import tempfile
 import urllib.parse
+import base64
+import re
+import time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
@@ -52,7 +55,7 @@ SARVAM_ENDPOINT = "https://api.sarvam.ai/speech-to-text"
 SARVAM_MODEL = "saaras:v4"
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
-GEMINI_MODELS = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash"]
+GEMINI_MODELS = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-flash-lite"]
 GEMINI_MODEL = GEMINI_MODELS[0]
 
 logging.basicConfig(
@@ -589,7 +592,7 @@ Based on this clinical progression and guidelines, provide the updated clinical 
             t = t[start : end + 1]
         return json.loads(t)
 
-    FAST_MODELS = ["gemini-3.8-flash", "gemini-flash-latest"]
+    FAST_MODELS = ["gemini-2.5-flash", "gemini-1.5-flash"]
     for model_name in FAST_MODELS:
         endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         try:
@@ -613,6 +616,173 @@ Based on this clinical progression and guidelines, provide the updated clinical 
 
     logger.info("[Clinical Engine] Generating instant clinical considerations & next question via Medical Knowledge Graph.")
     return get_fallback_clinical_reasoning(dialogue_history, patient_info, latest_regional, latest_english)
+
+
+# ------------------------------------------------------------------
+# Gemini Multimodal OCR Processing
+# ------------------------------------------------------------------
+def process_ocr_with_gemini(file_bytes: bytes, content_type: str = "image/jpeg") -> dict:
+    """
+    Process medical prescription or report image/PDF bytes using Gemini Flash Vision API.
+    Returns normalized JSON dictionary matching OCRResult expectations.
+    """
+    if not GEMINI_API_KEY:
+        return {
+            "status": "error",
+            "message": "GEMINI_API_KEY not configured on server",
+            "extracted_text": "",
+            "document_type": "Unknown",
+            "is_prescription": False,
+            "confidence": 0,
+            "medicines": [],
+            "structured_medicines": []
+        }
+
+    mime_type = "image/jpeg"
+    if "pdf" in content_type.lower() or file_bytes[:4] == b"%PDF":
+        mime_type = "application/pdf"
+    elif "png" in content_type.lower() or file_bytes[:8] == b"\x89PNG\r\n\x1a\n":
+        mime_type = "image/png"
+    elif "webp" in content_type.lower() or (len(file_bytes) > 12 and file_bytes[8:12] == b"WEBP"):
+        mime_type = "image/webp"
+
+    img_b64 = base64.b64encode(file_bytes).decode("utf-8")
+
+    prompt = """You are an expert clinical physician and medical AI analyzing a medical document (prescription slip, MRI/CT scan report, X-ray report, lab test, or discharge summary).
+Carefully extract all visible details into JSON format:
+{
+  "document_type": "Prescription" | "Scan Report" | "Lab Report" | "Discharge Summary" | "Medical Report",
+  "is_prescription": true,
+  "doctor_name": "...",
+  "patient_name": "...",
+  "date": "...",
+  "age": "...",
+  "gender": "...",
+  "weight": "...",
+  "clinical_description": "...",
+  "diagnosis": "...",
+  "vitals": "...",
+  "handwritten_text": "...",
+  "medicines": [
+    {
+      "medicine_name": "...",
+      "dosage": "...",
+      "frequency": "...",
+      "duration": "...",
+      "instructions": "...",
+      "confidence": "high|medium|low"
+    }
+  ]
+}
+Requirements:
+- Return ONLY valid JSON without markdown wrapping.
+- For prescriptions, populate structured medicines and copy handwritten clinical advice."""
+
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt},
+                    {
+                        "inline_data": {
+                            "mime_type": mime_type,
+                            "data": img_b64
+                        }
+                    }
+                ]
+            }
+        ],
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 2048
+        }
+    }
+
+    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-flash-lite"]
+    for model_name in models_to_try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
+        try:
+            resp = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json()
+                raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
+                raw_clean = raw_text.strip()
+                if raw_clean.startswith("```"):
+                    lines = raw_clean.splitlines()
+                    if lines[0].startswith("```"): lines = lines[1:]
+                    if lines and lines[-1].startswith("```"): lines = lines[:-1]
+                    raw_clean = "\n".join(lines).strip()
+                parsed = None
+                try:
+                    parsed = json.loads(raw_clean)
+                except Exception:
+                    m = re.search(r'\{[\s\S]*\}', raw_clean)
+                    if m:
+                        try:
+                            parsed = json.loads(m.group())
+                        except Exception:
+                            pass
+                if parsed:
+                    struct_meds = parsed.get("medicines", [])
+                    formatted_meds = []
+                    for m in struct_meds:
+                        if isinstance(m, dict):
+                            parts = [m.get("medicine_name", "")]
+                            if m.get("dosage"): parts.append(m.get("dosage"))
+                            if m.get("frequency"): parts.append(m.get("frequency"))
+                            if m.get("duration"): parts.append(f"x {m.get('duration')}")
+                            name_str = " ".join([p for p in parts if p]).strip()
+                            if name_str:
+                                formatted_meds.append(name_str)
+                        elif isinstance(m, str):
+                            formatted_meds.append(m)
+
+                    doc_type = parsed.get("document_type", "Prescription")
+                    is_rx = parsed.get("is_prescription", True)
+
+                    summary_parts = []
+                    if parsed.get("document_type"): summary_parts.append(f"Document Type: {parsed['document_type']}")
+                    if parsed.get("doctor_name"): summary_parts.append(f"Doctor: {parsed['doctor_name']}")
+                    if parsed.get("patient_name"): summary_parts.append(f"Name: {parsed['patient_name']}")
+                    if parsed.get("clinical_description"): summary_parts.append(f"Clinical Description: {parsed['clinical_description']}")
+                    if parsed.get("diagnosis"): summary_parts.append(f"Diagnosis: {parsed['diagnosis']}")
+                    if parsed.get("handwritten_text"): summary_parts.append(f"Advice / Findings:\n{parsed['handwritten_text']}")
+
+                    return {
+                        "status": "success",
+                        "ok": True,
+                        "document_type": doc_type,
+                        "is_prescription": is_rx,
+                        "confidence": 0.95,
+                        "doctor_name": parsed.get("doctor_name", ""),
+                        "patient_info": {
+                            "patientName": parsed.get("patient_name", ""),
+                            "age": parsed.get("age", ""),
+                            "gender": parsed.get("gender", ""),
+                            "date": parsed.get("date", ""),
+                            "doctorName": parsed.get("doctor_name", "")
+                        },
+                        "clinical_description": parsed.get("clinical_description", ""),
+                        "diagnosis": parsed.get("diagnosis", ""),
+                        "handwritten_text": parsed.get("handwritten_text", ""),
+                        "medicines": formatted_meds,
+                        "structured_medicines": struct_meds,
+                        "extracted_text": "\n".join(summary_parts)
+                    }
+        except Exception as e:
+            logger.warning("[OCR] Gemini model %s failed: %s", model_name, e)
+            continue
+
+    return {
+        "status": "error",
+        "message": "Gemini OCR processing failed",
+        "extracted_text": "",
+        "document_type": "Unknown",
+        "is_prescription": False,
+        "confidence": 0,
+        "medicines": [],
+        "structured_medicines": []
+    }
 
 
 # ------------------------------------------------------------------
@@ -644,6 +814,11 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
         query_params = urllib.parse.parse_qs(parsed.query)
+
+        # Health & OCR Health Endpoints
+        if path in ("/api/health", "/api/ocr/health"):
+            self._send_json(200, {"status": "ok", "service": "ocr-engine-cloud-gemini"})
+            return
 
         # 1. Cases Endpoints
         if path == "/api/cases":
@@ -804,6 +979,53 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
             logger.error("[Server Clinical Reasoning Error] %s", err, exc_info=True)
             self._send_json(500, {"status": "error", "message": str(err)})
 
+    def _handle_ocr(self):
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+            content_type = self.headers.get("Content-Type", "")
+            if content_length == 0:
+                self._send_json(400, {"status": "error", "message": "Empty request body"})
+                return
+
+            raw_data = self.rfile.read(content_length)
+            file_bytes = None
+            file_mime = "image/jpeg"
+
+            if "multipart/form-data" in content_type and "boundary=" in content_type:
+                boundary = content_type.split("boundary=")[-1].strip().encode("utf-8")
+                parts = raw_data.split(b"--" + boundary)
+                for part in parts:
+                    if not part or part.strip() in (b"", b"--", b"--\r\n"):
+                        continue
+                    if b"\r\n\r\n" not in part:
+                        continue
+                    header_section, _, body_section = part.partition(b"\r\n\r\n")
+                    header_text = header_section.decode("utf-8", errors="replace")
+                    body = body_section
+                    if body.endswith(b"\r\n"):
+                        body = body[:-2]
+
+                    if 'name="file"' in header_text or 'filename=' in header_text or 'name="image"' in header_text:
+                        file_bytes = body
+                        if "Content-Type:" in header_text:
+                            for line in header_text.splitlines():
+                                if line.lower().startswith("content-type:"):
+                                    file_mime = line.split(":", 1)[1].strip()
+                        break
+            else:
+                file_bytes = raw_data
+                file_mime = content_type or "image/jpeg"
+
+            if not file_bytes:
+                self._send_json(400, {"status": "error", "message": "No image or document file uploaded."})
+                return
+
+            res = process_ocr_with_gemini(file_bytes, file_mime)
+            self._send_json(200, res)
+        except Exception as err:
+            logger.error("[OCR Handler Error] %s", err, exc_info=True)
+            self._send_json(500, {"status": "error", "message": str(err)})
+
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path.rstrip("/")
@@ -946,6 +1168,10 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
             return
 
         # 4. Existing Services
+        if path == "/api/ocr":
+            self._handle_ocr()
+            return
+
         if path == "/api/tts":
             self._handle_tts()
             return

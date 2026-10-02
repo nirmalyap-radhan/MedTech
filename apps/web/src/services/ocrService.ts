@@ -60,7 +60,8 @@ export interface OCRProgressStep {
 
 const OCR_API_BASE =
   (import.meta.env.VITE_OCR_API_URL as string | undefined) ||
-  'http://localhost:7861';
+  (import.meta.env.VITE_VOICE_API_URL as string | undefined) ||
+  'http://localhost:5000';
 
 const OCR_ENDPOINT = `${OCR_API_BASE}/api/ocr`;
 const HEALTH_ENDPOINT = `${OCR_API_BASE}/api/health`;
