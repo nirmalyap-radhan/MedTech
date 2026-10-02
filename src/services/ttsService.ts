@@ -80,9 +80,9 @@ class TTSService {
   /**
    * Pre-fetches question audio in the background so it plays with 0ms latency.
    */
-  public async prefetch(text: string, language: 'or' | 'hi' | 'en' = 'or'): Promise<void> {
+  public async prefetch(text: string, language: string = 'or'): Promise<void> {
     if (!text || !text.trim()) return;
-    const langParam = language === 'or' ? 'odia' : language === 'hi' ? 'hindi' : 'english';
+    const langParam = language || 'or';
     const cacheKey = `${langParam}:${text.trim()}`;
     if (this.audioCache.has(cacheKey)) return;
 
@@ -106,7 +106,7 @@ class TTSService {
   /**
    * Speak the given question text. Resolves when speech finishes playing.
    */
-  public async speak(text: string, language: 'or' | 'hi' | 'en' = 'or'): Promise<boolean> {
+  public async speak(text: string, language: string = 'or'): Promise<boolean> {
     if (!text || !text.trim()) {
       return false;
     }
@@ -118,7 +118,7 @@ class TTSService {
     this.abortController = new AbortController();
     this.isCurrentlySpeaking = true;
 
-    // First attempt: Backend Sarvam bulbul:v3 for studio-grade authentic Odia speech
+    // First attempt: Backend Sarvam bulbul:v3 for studio-grade authentic speech
     try {
       const played = await this.speakViaBackend(text, language, myRequestId, this.abortController.signal);
       if (myRequestId !== this.currentRequestId) {
@@ -138,9 +138,8 @@ class TTSService {
       return false;
     }
 
-    // For Odia, do NOT fallback to browser SpeechSynthesis because browsers lack Odia TTS
-    // and would produce delayed garbled English pronunciation of Odia Unicode.
-    if (language === 'or') {
+    // For non-English Indic scripts without native browser TTS voices, don't garble speech
+    if (['or', 'bn', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'pa', 'as', 'ur'].includes(language)) {
       this.isCurrentlySpeaking = false;
       return false;
     }
@@ -166,11 +165,11 @@ class TTSService {
    */
   private async speakViaBackend(
     text: string,
-    language: 'or' | 'hi' | 'en',
+    language: string,
     requestId: number,
     signal: AbortSignal
   ): Promise<boolean> {
-    const langParam = language === 'or' ? 'odia' : language === 'hi' ? 'hindi' : 'english';
+    const langParam = language || 'or';
     const cleanText = text.replace(/’/g, "'").trim();
     const cacheKey = `${langParam}:${cleanText}`;
 
@@ -286,7 +285,7 @@ class TTSService {
    */
   private async speakViaBrowser(
     text: string,
-    language: 'or' | 'hi' | 'en',
+    language: string,
     requestId: number
   ): Promise<boolean> {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {

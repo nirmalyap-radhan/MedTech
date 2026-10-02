@@ -14,6 +14,7 @@ import type {
 } from '../types';
 import { INITIAL_PATIENT_CASES } from '../data/mockData';
 import { authDatabaseService } from '../services/authDatabaseService';
+import { caseDatabaseService } from '../services/caseDatabaseService';
 
 interface AppContextType {
   cases: PatientCase[];
@@ -55,6 +56,7 @@ interface AppContextType {
   updateDraftClinicalConsiderations: (cc: ClinicalConsiderations) => void;
   addDialogueTurn: (turn: ClinicalDialogueTurn) => void;
   addDraftDocument: (doc: OCRDocument) => void;
+  removeDraftDocument: (docId: string) => void;
   updateDraftDocument: (docId: string, updated: Partial<OCRDocument>) => void;
   updateDraftAyush: (ayush: Partial<AyushAssessment>) => void;
   submitPatientIntake: () => string; // Returns submitted case ID
@@ -87,31 +89,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Doctor Auth & Database state
   const [currentDoctor, setCurrentDoctor] = useState<DoctorProfile | null>({
     id: 'DOC-2026-001',
-    name: 'Dr. A. K. Mishra',
+    name: 'Dr. Suresh Mishra',
     email: 'dr.mishra@hospital.gov.in',
     mciRegNumber: 'MCI-48920/OD',
     department: 'Internal Medicine & Critical Care',
     roomNumber: 'Room 104',
     role: 'CONSULTANT_PHYSICIAN',
     phone: '+91 94370 12890',
-    avatar: 'AM',
+    avatar: 'SM',
     createdAt: new Date().toISOString(),
   });
   const [isDoctorAuthenticated, setIsDoctorAuthenticated] = useState<boolean>(false);
   const [activeDoctorSession, setActiveDoctorSession] = useState<AuthSession | null>(null);
   const [authLoading, setAuthLoading] = useState<boolean>(true);
 
-  // Initialize DB and verify existing session on mount
+  // Initialize DB, load persistent cases, and verify existing session on mount
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         await authDatabaseService.getDB();
-        const active = await authDatabaseService.getActiveSession();
-        if (mounted && active) {
-          setActiveDoctorSession(active);
-          setCurrentDoctor(active.doctor);
-          setIsDoctorAuthenticated(true);
+        const [active, dbCases] = await Promise.all([
+          authDatabaseService.getActiveSession(),
+          caseDatabaseService.getAllCases(),
+        ]);
+        if (mounted) {
+          if (active) {
+            setActiveDoctorSession(active);
+            setCurrentDoctor(active.doctor);
+            setIsDoctorAuthenticated(true);
+          }
+          if (dbCases && dbCases.length > 0) {
+            setCases(dbCases);
+            setActiveCaseId(dbCases[0].id);
+          }
         }
       } catch (e) {
         console.error('Database initialization error:', e);
@@ -248,6 +259,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }));
   };
 
+  const removeDraftDocument = (docId: string) => {
+    setCurrentDraft((prev) => ({
+      ...prev,
+      documents: prev.documents.filter((d) => d.id !== docId),
+    }));
+  };
+
   const updateDraftDocument = (docId: string, updated: Partial<OCRDocument>) => {
     setCurrentDraft((prev) => ({
       ...prev,
@@ -316,6 +334,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       return [newCase, ...prev];
     });
 
+    // Asynchronously persist to real database & vector engine
+    caseDatabaseService.saveCase(newCase).catch((err) => {
+      console.warn('[AppContext] Case database persist deferred:', err);
+    });
+
     setActiveCaseId(caseId);
     return caseId;
   };
@@ -328,12 +351,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setCases((prev) =>
       prev.map((c) => (c.id === caseId ? { ...c, aiSummary: summary } : c))
     );
+    caseDatabaseService.updateCaseSummary(caseId, summary).catch(() => {});
   };
 
   const confirmDoctorCase = (caseId: string) => {
     setCases((prev) =>
       prev.map((c) => (c.id === caseId ? { ...c, status: 'Doctor Verified' } : c))
     );
+    caseDatabaseService.updateCaseStatus(caseId, 'Doctor Verified').catch(() => {});
   };
 
   const resetPatientDraft = () => {
@@ -390,6 +415,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         updateDraftClinicalConsiderations,
         addDialogueTurn,
         addDraftDocument,
+        removeDraftDocument,
         updateDraftDocument,
         updateDraftAyush,
         submitPatientIntake,

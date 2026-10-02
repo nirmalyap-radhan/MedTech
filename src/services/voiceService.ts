@@ -162,7 +162,7 @@ export class VoiceService {
   /**
    * Stop Real Microphone Recording & Send Audio to indic-speech-translate-main Backend
    */
-  public async stopRecording(language: 'or' | 'hi' | 'en' = 'or'): Promise<VoiceIntakeResult> {
+  public async stopRecording(language: string = 'or'): Promise<VoiceIntakeResult> {
     return new Promise((resolve) => {
       const recorder = this.mediaRecorder;
       const stream = this.activeStream;
@@ -204,7 +204,7 @@ export class VoiceService {
 
         const ext = mimeType.includes('ogg') ? 'ogg' : mimeType.includes('mp4') ? 'mp4' : 'webm';
         const filename = `mic_recording.${ext}`;
-        const langName = language === 'or' ? 'odia' : language === 'hi' ? 'hindi' : 'english';
+        const langName = language || 'or';
 
         console.log('[VOICE] Sending audio to Sarvam (lang:', langName, 'size:', audioBlob.size, ')');
 

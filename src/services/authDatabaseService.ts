@@ -7,6 +7,8 @@ const SESSIONS_STORE = 'sessions';
 const AUDIT_LOGS_STORE = 'auditLogs';
 const LOCAL_STORAGE_TOKEN_KEY = 'medikiosk_doctor_auth_token';
 
+const BACKEND_AUTH_URL = (import.meta.env.VITE_VOICE_API_URL || 'http://localhost:5000/api/transcribe').replace('/api/transcribe', '');
+
 // Cryptographic helpers using browser Web Crypto API
 async function generateSalt(): Promise<string> {
   const array = new Uint8Array(16);
@@ -45,7 +47,7 @@ const INITIAL_DOCTORS: Array<{
   avatar: string;
 }> = [
   {
-    name: 'Dr. A. K. Mishra',
+    name: 'Dr. Suresh Mishra',
     email: 'dr.mishra@hospital.gov.in',
     passwordPlain: 'Doctor@123',
     mciRegNumber: 'MCI-48920/OD',
@@ -53,7 +55,7 @@ const INITIAL_DOCTORS: Array<{
     roomNumber: 'Room 104',
     role: 'CONSULTANT_PHYSICIAN',
     phone: '+91 94370 12890',
-    avatar: 'AM',
+    avatar: 'SM',
   },
   {
     name: 'Dr. Sneha Patnaik',
@@ -192,14 +194,45 @@ class AuthDatabaseService {
     });
   }
 
-  // Doctor Login with Web Crypto authentication and rate-limiting
+  // Doctor Login with Production Database authentication and rate-limiting
   public async login(
     emailInput: string,
     passwordInput: string
   ): Promise<{ success: boolean; session?: AuthSession; doctor?: DoctorProfile; error?: string }> {
-    const db = await this.getDB();
-    const cleanEmail = emailInput.toLowerCase().trim();
+    let cleanEmail = emailInput.toLowerCase().trim();
+    if (['dr.suresh@hospital.gov.in', 'dr.suresh.mishra@hospital.gov.in', 'suresh.mishra@hospital.gov.in', 'suresh', 'dr.suresh', 'dr.mishra'].includes(cleanEmail)) {
+      cleanEmail = 'dr.mishra@hospital.gov.in';
+    }
 
+    // 1. Try production remote database first
+    try {
+      const resp = await fetch(`${BACKEND_AUTH_URL}/api/auth/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ email: cleanEmail, password: passwordInput }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.status === 'success' && data.session && data.doctor) {
+        localStorage.setItem(LOCAL_STORAGE_TOKEN_KEY, data.session.token);
+        try {
+          const db = await this.getDB();
+          const tx = db.transaction([SESSIONS_STORE], 'readwrite');
+          tx.objectStore(SESSIONS_STORE).put(data.session);
+        } catch (_) {}
+        return { success: true, session: data.session, doctor: data.doctor };
+      }
+      if (data.message) {
+        return { success: false, error: data.message };
+      }
+    } catch (netErr) {
+      console.warn('[AuthDB] Remote database offline, falling back to local client store:', netErr);
+    }
+
+    // 2. Client-side IndexedDB Fallback
+    const db = await this.getDB();
     return new Promise((resolve) => {
       const tx = db.transaction([DOCTORS_STORE, SESSIONS_STORE, AUDIT_LOGS_STORE], 'readwrite');
       const docStore = tx.objectStore(DOCTORS_STORE);
@@ -333,6 +366,23 @@ class AuthDatabaseService {
       const token = localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
       if (!token) return null;
 
+      // Check remote database first
+      try {
+        const resp = await fetch(`${BACKEND_AUTH_URL}/api/auth/session`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json',
+          },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.status === 'success' && data.session) {
+            return data.session;
+          }
+        }
+      } catch (_) {}
+
       const db = await this.getDB();
       return new Promise((resolve) => {
         const tx = db.transaction([SESSIONS_STORE], 'readonly');
@@ -367,6 +417,16 @@ class AuthDatabaseService {
   public async logout(token?: string): Promise<void> {
     const activeToken = token || localStorage.getItem(LOCAL_STORAGE_TOKEN_KEY);
     localStorage.removeItem(LOCAL_STORAGE_TOKEN_KEY);
+
+    if (activeToken) {
+      try {
+        await fetch(`${BACKEND_AUTH_URL}/api/auth/logout`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: activeToken }),
+        });
+      } catch (_) {}
+    }
 
     if (!activeToken) return;
 
@@ -418,6 +478,22 @@ class AuthDatabaseService {
     if (!data.mciRegNumber || data.mciRegNumber.trim().length < 4) {
       return { success: false, error: 'Valid MCI/NMC registration number is required for hospital clinical audit.' };
     }
+
+    // Try remote database registration first
+    try {
+      const resp = await fetch(`${BACKEND_AUTH_URL}/api/auth/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const res = await resp.json();
+      if (resp.ok && res.status === 'success' && res.doctor) {
+        return { success: true, doctor: res.doctor };
+      }
+      if (res.message) {
+        return { success: false, error: res.message };
+      }
+    } catch (_) {}
 
     const db = await this.getDB();
 

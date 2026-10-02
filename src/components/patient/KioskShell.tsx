@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
+import { SUPPORTED_LANGUAGES, getLanguageLabel } from '../../types';
+import { t, type TranslationStrings } from '../../utils/i18n';
 import { 
   Home, 
   User, 
@@ -37,6 +39,8 @@ interface StepItem {
   subtitleEn: string;
   subtitleOr: string;
   subtitleHi: string;
+  titleKey: keyof TranslationStrings;
+  subKey: keyof TranslationStrings;
   icon: React.ComponentType<{ className?: string }>;
 }
 
@@ -51,6 +55,8 @@ const KIOSK_STEPS: StepItem[] = [
     subtitleEn: 'Get Started',
     subtitleOr: 'ଆରମ୍ଭ କରନ୍ତୁ',
     subtitleHi: 'शुरू करें',
+    titleKey: 'stepWelcome',
+    subKey: 'stepWelcomeSub',
     icon: Home,
   },
   {
@@ -63,6 +69,8 @@ const KIOSK_STEPS: StepItem[] = [
     subtitleEn: 'Basic Information',
     subtitleOr: 'ମୌଳିକ ସୂଚନା',
     subtitleHi: 'मूल जानकारी',
+    titleKey: 'stepPatientDetails',
+    subKey: 'stepPatientDetailsSub',
     icon: User,
   },
   {
@@ -75,6 +83,8 @@ const KIOSK_STEPS: StepItem[] = [
     subtitleEn: 'Current & Past',
     subtitleOr: 'ବର୍ତ୍ତମାନ ଓ ପୂର୍ବ',
     subtitleHi: 'वर्तमान और पिछला',
+    titleKey: 'stepSymptoms',
+    subKey: 'stepSymptomsSub',
     icon: Stethoscope,
   },
   {
@@ -87,6 +97,8 @@ const KIOSK_STEPS: StepItem[] = [
     subtitleEn: 'Upload Reports',
     subtitleOr: 'ରିପୋର୍ଟ ଅପଲୋଡ଼',
     subtitleHi: 'रिपोर्ट अपलोड',
+    titleKey: 'stepPrescription',
+    subKey: 'stepPrescriptionSub',
     icon: FileText,
   },
   {
@@ -98,7 +110,9 @@ const KIOSK_STEPS: StepItem[] = [
     titleHi: 'आयुष मूल्यांकन',
     subtitleEn: 'Dashavidha Pariksha',
     subtitleOr: 'ଦଶବିଧ ପରୀକ୍ଷା',
-    subtitleHi: 'दशविध परीक्षा',
+    subtitleHi: 'दशविद परीक्षा',
+    titleKey: 'stepAyush',
+    subKey: 'stepAyushSub',
     icon: Sparkles,
   },
   {
@@ -111,6 +125,8 @@ const KIOSK_STEPS: StepItem[] = [
     subtitleEn: 'Check & Submit',
     subtitleOr: 'ଯାଞ୍ଚ କରନ୍ତୁ',
     subtitleHi: 'जांचें और भेजें',
+    titleKey: 'stepReview',
+    subKey: 'stepReviewSub',
     icon: CheckCircle2,
   },
 ];
@@ -207,7 +223,7 @@ export const KioskShell: React.FC<KioskShellProps> = ({
                   MediKiok
                 </h1>
                 <p className="text-[11px] font-semibold text-[#86EFAC] tracking-wide uppercase">
-                  {currentLanguage === 'or' ? 'ସ୍ମାର୍ଟ ରୋଗୀ ପଞ୍ଜୀକରଣ' : currentLanguage === 'hi' ? 'स्मार्ट रोगी पंजीकरण' : 'Smart Patient Intake'}
+                  {t('appTitle', currentLanguage)}
                 </p>
               </div>
             </div>
@@ -219,19 +235,8 @@ export const KioskShell: React.FC<KioskShellProps> = ({
                 const isCompleted = step.stepNumber < activeStep;
                 const IconComponent = step.icon;
 
-                const stepTitle =
-                  currentLanguage === 'or'
-                    ? step.titleOr
-                    : currentLanguage === 'hi'
-                    ? step.titleHi
-                    : step.titleEn;
-
-                const stepSubtitle =
-                  currentLanguage === 'or'
-                    ? step.subtitleOr
-                    : currentLanguage === 'hi'
-                    ? step.subtitleHi
-                    : step.subtitleEn;
+                const stepTitle = t(step.titleKey, currentLanguage);
+                const stepSubtitle = t(step.subKey, currentLanguage);
 
                 return (
                   <button
@@ -285,7 +290,7 @@ export const KioskShell: React.FC<KioskShellProps> = ({
           <div className="pt-6 relative z-10 border-t border-white/10 space-y-4">
             <div>
               <p className="text-xs italic text-white/75 font-medium leading-relaxed">
-                {currentLanguage === 'or' ? '“ଉନ୍ନତ ସ୍ୱାସ୍ଥ୍ୟ ପାଇଁ ଆଧୁନିକ ପ୍ରଯୁକ୍ତିବିଦ୍ୟା”' : '“Technology for a Healthier Tomorrow”'}
+                {t('tagline', currentLanguage)}
               </p>
               <div className="w-16 h-1 bg-gradient-to-r from-[#86EFAC] to-transparent rounded-full mt-2" />
             </div>
@@ -300,7 +305,7 @@ export const KioskShell: React.FC<KioskShellProps> = ({
               >
                 <DoctorIcon className="w-3.5 h-3.5" />
                 <span className="font-semibold underline decoration-white/30">
-                  {currentLanguage === 'or' ? 'ଡାକ୍ତର ପୋର୍ଟାଲ' : 'Doctor Portal'}
+                  {t('doctorPortal', currentLanguage)}
                 </span>
               </button>
             </div>
@@ -323,52 +328,33 @@ export const KioskShell: React.FC<KioskShellProps> = ({
               >
                 <Globe className="w-4 h-4 text-[#0F766E]" />
                 <span className="font-bold">
-                  {currentLanguage === 'or' ? 'ଓଡ଼ିଆ (Odia)' : currentLanguage === 'hi' ? 'हिन्दी (Hindi)' : 'English'}
+                  {getLanguageLabel(currentLanguage)}
                 </span>
                 <ChevronDown className="w-3.5 h-3.5 text-[#5B736B]" />
               </button>
 
               {langMenuOpen && (
-                <div className="absolute top-12 left-0 w-48 bg-white rounded-2xl shadow-xl border border-[#D5DFD8] py-2 z-50 animate-in fade-in zoom-in-95">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLanguage('or');
-                      setLangMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#E8F2EC] cursor-pointer ${
-                      currentLanguage === 'or' ? 'text-[#0D3B36] bg-[#E8F2EC]/60' : 'text-[#142B25]'
-                    }`}
-                  >
-                    <span>ଓଡ଼ିଆ (Odia)</span>
-                    {currentLanguage === 'or' && <Check className="w-4 h-4 text-[#0D3B36] stroke-[2.5]" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLanguage('hi');
-                      setLangMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#E8F2EC] cursor-pointer ${
-                      currentLanguage === 'hi' ? 'text-[#0D3B36] bg-[#E8F2EC]/60' : 'text-[#142B25]'
-                    }`}
-                  >
-                    <span>हिन्दी (Hindi)</span>
-                    {currentLanguage === 'hi' && <Check className="w-4 h-4 text-[#0D3B36] stroke-[2.5]" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLanguage('en');
-                      setLangMenuOpen(false);
-                    }}
-                    className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#E8F2EC] cursor-pointer ${
-                      currentLanguage === 'en' ? 'text-[#0D3B36] bg-[#E8F2EC]/60' : 'text-[#142B25]'
-                    }`}
-                  >
-                    <span>English</span>
-                    {currentLanguage === 'en' && <Check className="w-4 h-4 text-[#0D3B36] stroke-[2.5]" />}
-                  </button>
+                <div className="absolute top-12 left-0 w-56 max-h-72 overflow-y-auto bg-white rounded-2xl shadow-xl border border-[#D5DFD8] py-2 z-50 animate-in fade-in zoom-in-95">
+                  {SUPPORTED_LANGUAGES.map((lang) => {
+                    const isSelected = currentLanguage === lang.code;
+                    const label = lang.code === 'en' ? 'English' : `${lang.nameNative} (${lang.nameEn})`;
+                    return (
+                      <button
+                        key={lang.code}
+                        type="button"
+                        onClick={() => {
+                          setLanguage(lang.code);
+                          setLangMenuOpen(false);
+                        }}
+                        className={`w-full text-left px-4 py-2.5 text-xs font-bold flex items-center justify-between hover:bg-[#E8F2EC] cursor-pointer ${
+                          isSelected ? 'text-[#0D3B36] bg-[#E8F2EC]/60' : 'text-[#142B25]'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        {isSelected && <Check className="w-4 h-4 text-[#0D3B36] stroke-[2.5]" />}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -418,7 +404,7 @@ export const KioskShell: React.FC<KioskShellProps> = ({
               {/* Card 1: "Your Progress" */}
               <div className="bg-white/95 rounded-[24px] border border-[#D8E3DC] p-5 shadow-xs space-y-4">
                 <h3 className="font-['Plus_Jakarta_Sans','Manrope'] text-base font-extrabold text-[#142B25]">
-                  {currentLanguage === 'or' ? 'ଆପଣଙ୍କ ପ୍ରଗତି' : currentLanguage === 'hi' ? 'आपकी प्रगति' : 'Your Progress'}
+                  {t('yourProgress', currentLanguage)}
                 </h3>
 
                 <div className="flex items-center justify-center py-2">
@@ -461,12 +447,7 @@ export const KioskShell: React.FC<KioskShellProps> = ({
                   {KIOSK_STEPS.filter((s) => s.stepNumber > 1).map((s) => {
                     const isDone = s.stepNumber < activeStep;
                     const isNow = s.stepNumber === activeStep;
-                    const sTitle =
-                      currentLanguage === 'or'
-                        ? s.titleOr
-                        : currentLanguage === 'hi'
-                        ? s.titleHi
-                        : s.titleEn;
+                    const sTitle = t(s.titleKey, currentLanguage);
 
                     return (
                       <div
@@ -512,26 +493,22 @@ export const KioskShell: React.FC<KioskShellProps> = ({
                 </div>
 
                 <h4 className="font-['Plus_Jakarta_Sans','Manrope'] text-sm font-bold text-[#142B25]">
-                  {currentLanguage === 'or' ? 'ଆପଣଙ୍କ ତଥ୍ୟ ଗୁରୁତ୍ୱପୂର୍ଣ୍ଣ' : currentLanguage === 'hi' ? 'आपकी जानकारी महत्वपूर्ण है' : 'Your Information Matters'}
+                  {t('infoMattersTitle', currentLanguage)}
                 </h4>
 
                 <p className="text-xs text-[#5B736B] leading-relaxed relative z-10">
-                  {currentLanguage === 'or'
-                    ? 'ସଠିକ୍ ସ୍ୱାସ୍ଥ୍ୟ ଇତିହାସ ଡାକ୍ତରଙ୍କୁ ଉପଯୁକ୍ତ ଚିକିତ୍ସା ନିର୍ଣ୍ଣୟ କରିବାରେ ସାହାଯ୍ୟ କରେ।'
-                    : currentLanguage === 'hi'
-                    ? 'विस्तृत इतिहास डॉक्टर को आपकी स्थिति को बेहतर ढंग से समझने और सही उपचार प्रदान करने में मदद करता है।'
-                    : 'A detailed history helps the doctor understand your condition better and provide the right treatment.'}
+                  {t('infoMattersSub', currentLanguage)}
                 </p>
               </div>
 
               {/* Footer Trust Badges */}
               <div className="pt-2 flex items-center justify-center space-x-2 text-[11px] font-semibold text-[#668076]">
                 <ShieldCheck className="w-3.5 h-3.5 text-[#145A4D]" />
-                <span>{currentLanguage === 'or' ? 'ସୁରକ୍ଷିତ' : 'Secure'}</span>
+                <span>{t('secureLabel', currentLanguage)}</span>
                 <span>•</span>
-                <span>{currentLanguage === 'or' ? 'ଗୋପନୀୟ' : 'Private'}</span>
+                <span>{t('privateLabel', currentLanguage)}</span>
                 <span>•</span>
-                <span>{currentLanguage === 'or' ? 'ଉନ୍ନତ ଚିକିତ୍ସା' : 'For Better Care'}</span>
+                <span>{t('betterCareLabel', currentLanguage)}</span>
               </div>
 
             </aside>

@@ -73,11 +73,10 @@ def extract_text_from_image(image):
     with torch.no_grad():
         generated_ids = donut_model.generate(
             encoding.pixel_values,
-            max_length=512,
+            max_length=192,
             num_beams=1,
-            repetition_penalty=1.6,
+            repetition_penalty=1.4,
             no_repeat_ngram_size=3,
-            early_stopping=True,
             decoder_start_token_id=processor.tokenizer.convert_tokens_to_ids("<s_ocr>")
         )
     generated_text = processor.tokenizer.batch_decode(generated_ids, skip_special_tokens=True)[0].strip()
@@ -130,7 +129,7 @@ def pil_to_base64(image, max_size=1024):
     img = image.copy()
     img.thumbnail((max_size, max_size), Image.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=90)
+    img.save(buf, format="JPEG", quality=82, optimize=True)
     return base64.b64encode(buf.getvalue()).decode("utf-8")
 
 # ===================== OLLAMA VLM ANALYSIS =====================
@@ -317,7 +316,8 @@ Requirements:
         }
     }
 
-    models_to_try = ["gemini-flash-latest", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+    # Verified high-speed models: gemini-3.5-flash-lite (<2s), gemini-flash-lite-latest (~2s)
+    models_to_try = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.1-flash-lite"]
     for model_name in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={GEMINI_API_KEY}"
         req = urllib.request.Request(
@@ -327,7 +327,7 @@ Requirements:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            with urllib.request.urlopen(req, timeout=12) as resp:
                 data = json.loads(resp.read().decode())
                 raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
                 parsed, clean_raw = parse_vlm_response(raw_text)

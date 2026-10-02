@@ -26,7 +26,7 @@ import re
 import logging
 import traceback
 from typing import Optional, List, Dict, Any
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # ──────────────────────────────────────────────────────────
 # Bootstrap: make sure we import from THIS directory
@@ -93,7 +93,7 @@ def bytes_to_pil(data: bytes, filename: str = "", content_type: str = "") -> Ima
     if is_pdf:
         if _PDF_BACKEND == "pymupdf":
             doc = _fitz.open(stream=data, filetype="pdf")
-            mat = _fitz.Matrix(2.0, 2.0)  # 2× zoom for sharp OCR
+            mat = _fitz.Matrix(1.5, 1.5)  # 1.5× zoom for fast, sharp OCR
             images = []
             max_pages = min(len(doc), 3)  # Support up to 3 pages for MRI/lab reports
             for page_idx in range(max_pages):
@@ -672,7 +672,7 @@ if __name__ == "__main__":
     logger.info("GET  http://%s:%d/api/health", OCR_API_HOST, OCR_API_PORT)
     logger.info("Note: OCR models load on first /api/ocr request (~30-60s)")
     logger.info("=" * 60)
-    server = HTTPServer((OCR_API_HOST, OCR_API_PORT), OCRHandler)
+    server = ThreadingHTTPServer((OCR_API_HOST, OCR_API_PORT), OCRHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -6,6 +6,7 @@ import { voiceService } from '../../services/voiceService';
 import { ttsService } from '../../services/ttsService';
 import { clinicalReasoningService } from '../../services/clinicalReasoningService';
 import { parseYesNoIntent } from '../../utils/voiceIntentParser';
+import { t, getQuestionText, getSymptomName } from '../../utils/i18n';
 import {
   Mic,
   Check,
@@ -121,12 +122,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
   const hasRequestedInitialMicRef = useRef<boolean>(false);
 
   // Localized question title & placeholder
-  const questionTitle =
-    currentLanguage === 'or'
-      ? (currentQuestion.textOr || currentQuestion.textEn)
-      : currentLanguage === 'hi'
-      ? (currentQuestion.textHi || currentQuestion.textEn)
-      : currentQuestion.textEn;
+  const questionTitle = getQuestionText(currentQuestion, currentLanguage);
 
   const placeholderText =
     currentLanguage === 'or'
@@ -385,12 +381,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
     // Current question
     const curQ = questions[currentIndex] || currentQuestion;
     if (curQ) {
-      const curText =
-        currentLanguage === 'or'
-          ? (curQ.textOr || curQ.textEn)
-          : currentLanguage === 'hi'
-          ? (curQ.textHi || curQ.textEn)
-          : curQ.textEn;
+      const curText = getQuestionText(curQ, currentLanguage);
       if (curText) {
         ttsService.prefetch(curText, currentLanguage);
       }
@@ -399,12 +390,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
     // Next question
     const nextQ = questions[currentIndex + 1];
     if (nextQ) {
-      const nextText =
-        currentLanguage === 'or'
-          ? (nextQ.textOr || nextQ.textEn)
-          : currentLanguage === 'hi'
-          ? (nextQ.textHi || nextQ.textEn)
-          : nextQ.textEn;
+      const nextText = getQuestionText(nextQ, currentLanguage);
       if (nextText) {
         ttsService.prefetch(nextText, currentLanguage);
       }
@@ -428,12 +414,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
     setVoiceDetails(null);
 
     const targetQuestion = questions[currentIndex] || currentQuestion;
-    const titleToSpeak =
-      currentLanguage === 'or'
-        ? (targetQuestion.textOr || targetQuestion.textEn)
-        : currentLanguage === 'hi'
-        ? (targetQuestion.textHi || targetQuestion.textEn)
-        : targetQuestion.textEn;
+    const titleToSpeak = getQuestionText(targetQuestion, currentLanguage);
 
     const existingAnswer = currentDraft.answers.find((a: IntakeAnswer) => a.questionId === targetQuestion.id);
     if (existingAnswer) {
@@ -732,19 +713,11 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
           </h2>
 
           <p className="text-sm sm:text-base font-semibold text-[#245B4E]">
-            {currentLanguage === 'or'
-              ? 'ଆପଣଙ୍କ ସ୍ୱାସ୍ଥ୍ୟ ସମସ୍ୟା କହିବାର ସହଜ ମାଧ୍ୟମ'
-              : currentLanguage === 'hi'
-              ? 'अपनी स्वास्थ्य स्थिति साझा करने का आसान तरीका'
-              : 'A smarter way to share your health story'}
+            {t('bannerSubtitle', currentLanguage)}
           </p>
 
           <p className="text-xs sm:text-sm text-[#5B736B] leading-relaxed max-w-xl pt-1">
-            {currentLanguage === 'or'
-              ? 'ଦୟାକରି ଆପଣଙ୍କର ସ୍ୱାସ୍ଥ୍ୟ ଅବସ୍ଥା ବିଷୟରେ ଜଣାନ୍ତୁ। ଆପଣ ସ୍ୱରରେ କହିପାରିବେ, ଟାଇପ୍ କରିପାରିବେ କିମ୍ବା ତଳେ ଥିବା ବିକଳ୍ପ ଚୟନ କରିପାରିବେ। ଡାକ୍ତରଙ୍କ ପାଇଁ ଏକ ସ୍ପଷ୍ଟ ସାରାଂଶ ପ୍ରସ୍ତୁତ କରାଯିବ।'
-              : currentLanguage === 'hi'
-              ? 'कृपया अपनी वर्तमान स्वास्थ्य स्थिति के बारे में बताएं। आप बोल सकते हैं, टाइप कर सकते हैं या विकल्पों में से चुन सकते हैं।'
-              : 'Please tell us about your current health condition. You can speak, type or select from the options below. Our system will create a structured summary for the doctor.'}
+            {t('bannerDesc', currentLanguage)}
           </p>
         </div>
       </motion.div>
@@ -767,7 +740,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             </div>
             <div>
               <div className="flex items-center space-x-2 text-xs font-bold text-[#145A4D] uppercase tracking-wider mb-1">
-                <span>{currentLanguage === 'or' ? `ପ୍ରଶ୍ନ ${currentIndex + 1} / ${questions.length}` : `Question ${currentIndex + 1} of ${questions.length}`}</span>
+                <span>{`Question ${currentIndex + 1} of ${questions.length}`}</span>
                 <span className="text-[#B0C7BD]">•</span>
                 <span>{currentQuestion.category}</span>
                 {isAiReasoning && (
@@ -781,11 +754,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
                 {questionTitle}
               </h3>
               <p className="text-xs sm:text-sm text-[#667E75] font-medium mt-0.5">
-                {currentLanguage === 'or'
-                  ? 'ଆପଣ ତଳେ ଥିବା ଲକ୍ଷଣ ବାଛିପାରିବେ କିମ୍ବା ମାଇକ୍ ବଟନ୍ ଦବାଇ ନିଜ ସ୍ୱରରେ କହିପାରିବେ'
-                  : currentLanguage === 'hi'
-                  ? 'आप नीचे दिए गए लक्षण चुन सकते हैं या माइक में बोलकर बता सकते हैं'
-                  : 'You can select a symptom below or speak in your own words'}
+                {t('questionHint', currentLanguage)}
               </p>
             </div>
           </div>
@@ -811,7 +780,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
               title="Toggle automatic question readout"
             >
               {autoVoice ? <Volume2 className="w-3.5 h-3.5 text-[#0D3B36]" /> : <VolumeX className="w-3.5 h-3.5 text-[#5B6560]" />}
-              <span>{autoVoice ? (currentLanguage === 'or' ? 'ସ୍ୱର ଗାଇଡ୍: ଅନ୍' : 'Voice Guide: ON') : (currentLanguage === 'or' ? 'ସ୍ୱର ଗାଇଡ୍: ଅଫ୍' : 'Voice Guide: OFF')}</span>
+              <span>{autoVoice ? t('voiceGuideOn', currentLanguage) : t('voiceGuideOff', currentLanguage)}</span>
             </button>
 
             {/* Repeat Audio Button */}
@@ -828,7 +797,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             {/* Common Symptoms Pill Badge */}
             <div className="px-3.5 py-1.5 rounded-full bg-[#EFF5F1] text-[#145A4D] border border-[#D5E4DB] text-xs font-bold flex items-center space-x-1.5">
               <LayoutGrid className="w-3.5 h-3.5" />
-              <span>{currentLanguage === 'or' ? 'ପ୍ରମୁଖ ଲକ୍ଷଣ' : currentLanguage === 'hi' ? 'प्रमुख लक्षण' : 'Common Symptoms'}</span>
+              <span>{t('commonSymptoms', currentLanguage)}</span>
             </div>
           </div>
         </div>
@@ -865,7 +834,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
 
                   <div className="space-y-0.5">
                     <span className="text-xs sm:text-sm font-bold text-[#142B25] block">
-                      {currentLanguage === 'or' ? sym.nameOr : currentLanguage === 'hi' ? sym.nameHi : sym.name}
+                      {getSymptomName(sym.id, currentLanguage)}
                     </span>
                     <span className="text-[10px] text-[#6B857C] font-semibold block">
                       {sym.name}
@@ -883,7 +852,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             <div className="space-y-0.5">
               <span className="text-[11px] font-bold uppercase tracking-wider text-[#145A4D] flex items-center space-x-1">
                 <Check className="w-3.5 h-3.5 stroke-[3] text-[#145A4D]" />
-                <span>{currentLanguage === 'or' ? 'ଆପଣଙ୍କର ଲିପିବଦ୍ଧ ଉତ୍ତର (Recorded Answer):' : 'Your Answer:'}</span>
+                <span>{t('yourAnswerHeader', currentLanguage)}</span>
               </span>
               <p className="text-base sm:text-lg font-extrabold text-[#0D3B36]">
                 "{inputValue}"
@@ -931,8 +900,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
                 <Check className="w-4 h-4 stroke-[3]" />
               </div>
               <div className="text-left">
-                <span className="block leading-tight">{currentLanguage === 'or' ? 'ହଁ (YES)' : currentLanguage === 'hi' ? 'हाँ (YES)' : 'YES'}</span>
-                <span className="text-[10px] font-semibold opacity-75 block">{currentLanguage === 'or' ? 'ଏହି ସମସ୍ୟା ଅଛି' : 'I have this'}</span>
+                <span className="block leading-tight">{t('yesBtn', currentLanguage)}</span>
+                <span className="text-[10px] font-semibold opacity-75 block">{t('yesSub', currentLanguage)}</span>
               </div>
             </button>
 
@@ -960,8 +929,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
                 <Check className="w-4 h-4 stroke-[3]" />
               </div>
               <div className="text-left">
-                <span className="block leading-tight">{currentLanguage === 'or' ? 'ନାହିଁ (NO)' : currentLanguage === 'hi' ? 'नहीं (NO)' : 'NO'}</span>
-                <span className="text-[10px] font-semibold opacity-75 block">{currentLanguage === 'or' ? 'ଏହି ସମସ୍ୟା ନାହିଁ' : 'I do not have this'}</span>
+                <span className="block leading-tight">{t('noBtn', currentLanguage)}</span>
+                <span className="text-[10px] font-semibold opacity-75 block">{t('noSub', currentLanguage)}</span>
               </div>
             </button>
           </div>
@@ -981,9 +950,9 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             >
               <Mic className="w-4 h-4" />
               <div className="text-left leading-tight">
-                <span className="block">{currentLanguage === 'or' ? 'ସ୍ୱରରେ କୁହନ୍ତୁ' : currentLanguage === 'hi' ? 'बोलकर बताएं' : 'Speak'}</span>
+                <span className="block">{t('speakButtonTitle', currentLanguage)}</span>
                 <span className="text-[9px] font-normal opacity-80 hidden sm:block">
-                  {currentLanguage === 'or' ? 'ସ୍ୱରରେ ଲକ୍ଷଣ କୁହନ୍ତୁ' : 'Tell us your symptoms'}
+                  {t('speakButtonSub', currentLanguage)}
                 </span>
               </div>
             </button>
@@ -999,9 +968,9 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             >
               <Keyboard className="w-4 h-4" />
               <div className="text-left leading-tight">
-                <span className="block">{currentLanguage === 'or' ? 'ଟାଇପ୍ କରନ୍ତୁ' : currentLanguage === 'hi' ? 'टाइप करें' : 'Type'}</span>
+                <span className="block">{t('typeButtonTitle', currentLanguage)}</span>
                 <span className="text-[9px] font-normal opacity-80 hidden sm:block">
-                  {currentLanguage === 'or' ? 'ନିଜେ ଲେଖନ୍ତୁ' : 'Write in your own words'}
+                  {t('typeButtonSub', currentLanguage)}
                 </span>
               </div>
             </button>
@@ -1017,9 +986,9 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             >
               <HandMetal className="w-4 h-4" />
               <div className="text-left leading-tight">
-                <span className="block">{currentLanguage === 'or' ? 'ଚୟନ କରନ୍ତୁ' : currentLanguage === 'hi' ? 'चुनें' : 'Touch Select'}</span>
+                <span className="block">{t('selectButtonTitle', currentLanguage)}</span>
                 <span className="text-[9px] font-normal opacity-80 hidden sm:block">
-                  {currentLanguage === 'or' ? 'ବିକଳ୍ପ ବାଛନ୍ତୁ' : 'Choose guided options'}
+                  {t('selectButtonSub', currentLanguage)}
                 </span>
               </div>
             </button>
@@ -1313,7 +1282,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             className="h-14 px-7 bg-white hover:bg-[#F2F5F3] text-[#142B25] font-bold text-sm rounded-full border border-[#D1DDD6] shadow-xs flex items-center space-x-2 transition-all cursor-pointer active:scale-98"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>{currentLanguage === 'or' ? 'ପୂର୍ବ (Back)' : 'Back'}</span>
+            <span>{t('backBtn', currentLanguage)}</span>
           </button>
 
           <div className="flex items-center space-x-3">
@@ -1323,7 +1292,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
                 onClick={handleSkipQuestion}
                 className="h-14 px-6 bg-[#F2F5F3] hover:bg-[#E6EFE9] text-[#3D5A52] hover:text-[#0D3B36] font-bold text-sm rounded-full border border-[#D1DDD6] shadow-xs flex items-center space-x-1.5 transition-all cursor-pointer active:scale-98"
               >
-                <span>{currentLanguage === 'or' ? 'ପ୍ରଶ୍ନ ଛାଡନ୍ତୁ (Skip)' : currentLanguage === 'hi' ? 'छोड़ें (Skip)' : 'Skip Question'}</span>
+                <span>{t('skipBtn', currentLanguage)}</span>
               </button>
             )}
 
@@ -1334,8 +1303,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             >
               <span>
                 {currentIndex === questions.length - 1
-                  ? (currentLanguage === 'or' ? 'ପରବର୍ତ୍ତୀ: ଦସ୍ତାବିଜ୍ ସ୍କାନ' : 'Next: Documents')
-                  : (currentLanguage === 'or' ? 'ପରବର୍ତ୍ତୀ ପ୍ରଶ୍ନ (Next)' : 'Confirm & Next')}
+                  ? t('continueBtn', currentLanguage)
+                  : t('nextBtn', currentLanguage)}
               </span>
               <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
             </button>

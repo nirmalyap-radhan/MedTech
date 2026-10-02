@@ -21,10 +21,16 @@ import sys
 import json
 import logging
 import tempfile
+import urllib.parse
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 import requests
+
+# Production Database & Medical Vector DB integrations
+from database import db_manager, verify_password, hash_password, generate_salt
+from vector_db import vector_db
+
 
 # ------------------------------------------------------------------
 # Load SARVAM_API_KEY and GEMINI_API_KEY from .env (server-side only)
@@ -80,13 +86,25 @@ LANG_CODE_MAP = {
     "english": "en-IN",
     "en": "en-IN",
     "tamil": "ta-IN",
+    "ta": "ta-IN",
     "telugu": "te-IN",
+    "te": "te-IN",
     "kannada": "kn-IN",
+    "kn": "kn-IN",
     "bengali": "bn-IN",
+    "bn": "bn-IN",
     "gujarati": "gu-IN",
+    "gu": "gu-IN",
     "marathi": "mr-IN",
+    "mr": "mr-IN",
     "punjabi": "pa-IN",
+    "pa": "pa-IN",
     "malayalam": "ml-IN",
+    "ml": "ml-IN",
+    "assamese": "as-IN",
+    "as": "as-IN",
+    "urdu": "ur-IN",
+    "ur": "ur-IN",
 }
 
 def resolve_lang_code(lang: str) -> str:
@@ -514,6 +532,18 @@ def call_gemini_clinical_engine(dialogue_history: list, patient_info: dict, late
         "}"
     )
 
+    # Medical Vector RAG Grounding: retrieve relevant AIIMS / WHO / CCRAS protocols
+    rag_context = ""
+    try:
+        query_text = f"{latest_english} {latest_regional}"
+        matched_guidelines = vector_db.search_similar_guidelines(query_text, top_k=2)
+        if matched_guidelines:
+            rag_context = "\n\nRelevant Standard Clinical Protocols (from Vector Knowledge Base):\n"
+            for g in matched_guidelines:
+                rag_context += f"- [{g['metadata'].get('title', 'Clinical Guideline')}]: {g['content']}\n"
+    except Exception as rag_err:
+        logger.debug("[RAG Error] %s", rag_err)
+
     prompt_content = f"""Patient Profile:
 Name: {p_name}, Age: {p_age}, Gender: {p_gender}
 
@@ -523,9 +553,9 @@ Current Intake Dialogue History:
 Latest Patient Utterance:
 - Odia: "{latest_regional}"
 - English Translation: "{latest_english}"
-- Total questions completed so far: {len(dialogue_history)}
+- Total questions completed so far: {len(dialogue_history)}{rag_context}
 
-Based on this clinical progression, provide the updated clinical considerations and the single next best follow-up question. (If 5-8 questions have been completed covering chief complaint, duration, associated symptoms, medical history, medications, and allergies, set "is_terminal": true)."""
+Based on this clinical progression and guidelines, provide the updated clinical considerations and the single next best follow-up question. (If 5-8 questions have been completed covering chief complaint, duration, associated symptoms, medical history, medications, and allergies, set "is_terminal": true)."""
 
     payload = {
         "contents": [
@@ -594,10 +624,10 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
         logger.info(format, *args)
 
     def _send_json(self, status: int, payload: dict):
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Methods", "POST, GET, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept, api-subscription-key")
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -611,8 +641,61 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
         self._send_json(200, {"status": "ok"})
 
     def do_GET(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.rstrip("/")
+        query_params = urllib.parse.parse_qs(parsed.query)
+
+        # 1. Cases Endpoints
+        if path == "/api/cases":
+            cases = db_manager.get_all_cases()
+            self._send_json(200, {"status": "success", "cases": cases})
+            return
+
+        if path.startswith("/api/cases/"):
+            case_id = path.replace("/api/cases/", "").strip()
+            c = db_manager.get_case_by_id(case_id)
+            if c:
+                self._send_json(200, {"status": "success", "case": c})
+            else:
+                self._send_json(404, {"status": "error", "message": f"Case {case_id} not found"})
+            return
+
+        # 2. Doctor Auth Endpoints
+        if path == "/api/auth/doctors":
+            doctors = db_manager.list_doctors()
+            self._send_json(200, {"status": "success", "doctors": doctors})
+            return
+
+        if path == "/api/auth/session":
+            auth_header = self.headers.get("Authorization", "")
+            token = None
+            if auth_header.startswith("Bearer "):
+                token = auth_header.replace("Bearer ", "").strip()
+            elif "token" in query_params:
+                token = query_params["token"][0]
+
+            if not token:
+                self._send_json(401, {"status": "error", "message": "Missing session token"})
+                return
+
+            sess = db_manager.get_session(token)
+            if sess:
+                self._send_json(200, {"status": "success", "session": sess, "doctor": sess["doctor"]})
+            else:
+                self._send_json(401, {"status": "error", "message": "Invalid or expired session token"})
+            return
+
+        if path == "/api/audit/logs":
+            limit = int(query_params.get("limit", [50])[0])
+            logs = db_manager.get_audit_logs(limit)
+            self._send_json(200, {"status": "success", "logs": logs})
+            return
+
+        # Default Health & Info
         self._send_json(200, {
             "service": "medikiok-voice-backend",
+            "database_backend": "PostgreSQL (pgvector)" if db_manager.is_postgres else "SQLite (Local Persistent)",
+            "vector_index_size": len(vector_db.local_index.embeddings),
             "stt_provider": "Sarvam Saaras v2",
             "tts_provider": "Sarvam bulbul:v3",
             "clinical_ai_provider": f"Gemini Flash ({GEMINI_MODEL})" if GEMINI_API_KEY else "Medical Knowledge Graph Engine",
@@ -622,76 +705,247 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
                 SARVAM_API_KEY and SARVAM_API_KEY != "your_sarvam_api_key_here"
             ),
             "supported_languages": list(LANG_CODE_MAP.keys()),
-            "endpoints": ["POST /api/transcribe", "POST /api/tts", "POST /api/clinical-reasoning"],
+            "endpoints": [
+                "GET  /api/cases",
+                "POST /api/cases",
+                "POST /api/cases/:id/status",
+                "POST /api/cases/:id/summary",
+                "POST /api/auth/login",
+                "POST /api/auth/register",
+                "POST /api/auth/logout",
+                "GET  /api/auth/session",
+                "GET  /api/auth/doctors",
+                "POST /api/vector/search",
+                "POST /api/guidelines/search",
+                "POST /api/transcribe",
+                "POST /api/tts",
+                "POST /api/clinical-reasoning"
+            ],
         })
+
+    def _read_json_body(self) -> dict:
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length == 0:
+            return {}
+        body = self.rfile.read(content_length)
+        return json.loads(body.decode("utf-8"))
+
+    def do_PUT(self):
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.rstrip("/")
+        
+        # Handle case updates via PUT
+        if "/status" in path:
+            case_id = path.replace("/api/cases/", "").replace("/status", "").strip()
+            payload = self._read_json_body()
+            status = payload.get("status", "Doctor Verified")
+            db_manager.update_case_status(case_id, status)
+            self._send_json(200, {"status": "success", "caseId": case_id, "caseStatus": status})
+            return
+
+        if "/summary" in path:
+            case_id = path.replace("/api/cases/", "").replace("/summary", "").strip()
+            payload = self._read_json_body()
+            summary = payload.get("summary", "")
+            db_manager.update_case_summary(case_id, summary)
+            self._send_json(200, {"status": "success", "caseId": case_id})
+            return
+
+        self._send_json(404, {"status": "error", "message": "Endpoint not found"})
+
+    def _handle_tts(self):
+        try:
+            payload = self._read_json_body()
+            text = payload.get("text", "").strip()
+            language = payload.get("language", "odia").strip().lower()
+
+            if not text:
+                self._send_json(400, {"status": "error", "message": "Text parameter is required."})
+                return
+
+            lang_code = "od-IN"
+            if language in ("hi", "hindi"):
+                lang_code = "hi-IN"
+            elif language in ("en", "english"):
+                lang_code = "en-IN"
+
+            cache_key_full = f"{language}:{text}"
+            audio_b64 = TTS_CACHE.get(text) or TTS_CACHE.get(cache_key_full)
+
+            if not audio_b64:
+                try:
+                    logger.info("[Server TTS] Requesting speech synthesis via Sarvam for lang=%s text='%s'", language, text[:40])
+                    audio_b64 = call_sarvam_tts(text, lang_code)
+                    TTS_CACHE[text] = audio_b64
+                    TTS_CACHE[cache_key_full] = audio_b64
+                    save_tts_cache()
+                except Exception as sarvam_err:
+                    logger.warning("[Server TTS] Sarvam TTS call failed: %s", sarvam_err)
+
+            if audio_b64:
+                self._send_json(200, {"status": "success", "audio_base64": audio_b64})
+            else:
+                self._send_json(500, {"status": "error", "message": f"TTS synthesis failed for language '{language}'"})
+        except Exception as err:
+            logger.error("[Server TTS Error] %s", err, exc_info=True)
+            self._send_json(500, {"status": "error", "message": str(err)})
 
     def _handle_clinical_reasoning(self):
         try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            if content_length == 0:
-                self._send_json(400, {"status": "error", "message": "Empty body for clinical reasoning."})
-                return
-            body = self.rfile.read(content_length)
-            payload = json.loads(body.decode("utf-8"))
-
+            payload = self._read_json_body()
             dialogue_history = payload.get("dialogue_history", [])
             patient_info = payload.get("patient_info", {})
             latest_regional = payload.get("latest_regional", "")
             latest_english = payload.get("latest_english", "")
 
-            reasoning_result = call_gemini_clinical_engine(
-                dialogue_history=dialogue_history,
-                patient_info=patient_info,
-                latest_regional=latest_regional,
-                latest_english=latest_english,
-            )
-
-            self._send_json(200, reasoning_result)
+            res = call_gemini_clinical_engine(dialogue_history, patient_info, latest_regional, latest_english)
+            self._send_json(200, res)
         except Exception as err:
-            logger.error("[Server Clinical] Error: %s", err, exc_info=True)
-            self._send_json(500, {"status": "error", "message": str(err)})
-
-    def _handle_tts(self):
-        try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            if content_length == 0:
-                self._send_json(400, {"status": "error", "message": "Empty body"})
-                return
-            body = self.rfile.read(content_length)
-            payload = json.loads(body.decode("utf-8"))
-            text = payload.get("text", "").strip()
-            lang = payload.get("language", "odia")
-            lang_code = resolve_lang_code(lang)
-
-            if not text:
-                self._send_json(400, {"status": "error", "message": "Text is required."})
-                return
-
-            if text in TTS_CACHE:
-                logger.info("[Server TTS] Serving cached audio for: '%s'", text[:30])
-                self._send_json(200, {
-                    "status": "success",
-                    "audio_base64": TTS_CACHE[text],
-                    "format": "audio/wav",
-                    "source": "cache",
-                })
-                return
-
-            audio_b64 = call_sarvam_tts(text, lang_code)
-            TTS_CACHE[text] = audio_b64
-            save_tts_cache()
-            self._send_json(200, {
-                "status": "success",
-                "audio_base64": audio_b64,
-                "format": "audio/wav",
-                "source": "sarvam-bulbul-v3",
-            })
-        except Exception as err:
-            logger.error("[Server TTS] Error: %s", err, exc_info=True)
+            logger.error("[Server Clinical Reasoning Error] %s", err, exc_info=True)
             self._send_json(500, {"status": "error", "message": str(err)})
 
     def do_POST(self):
-        path = self.path.rstrip("/")
+        parsed = urllib.parse.urlparse(self.path)
+        path = parsed.path.rstrip("/")
+
+        # 1. Doctor Authentication
+        if path == "/api/auth/login":
+            try:
+                payload = self._read_json_body()
+                email = payload.get("email", "")
+                password = payload.get("password", "")
+
+                doc = db_manager.get_doctor_by_email(email)
+                if not doc:
+                    db_manager.add_audit_log("UNKNOWN", email, "LOGIN_FAILED", "127.0.0.1", f"Unknown email {email}")
+                    self._send_json(401, {"status": "error", "message": "No medical staff account registered with this email."})
+                    return
+
+                # Lockout check
+                if doc.get("lockout_until") and doc["lockout_until"] > int(time.time() * 1000):
+                    wait_sec = int((doc["lockout_until"] - int(time.time() * 1000)) / 1000)
+                    self._send_json(403, {"status": "error", "message": f"Account temporarily locked. Retry in {wait_sec} seconds."})
+                    return
+
+                # Verify password
+                if not verify_password(password, doc["salt"], doc["password_hash"]):
+                    attempts = (doc.get("failed_attempts") or 0) + 1
+                    lockout = (int(time.time() * 1000) + 60000) if attempts >= 5 else None
+                    db_manager.update_doctor_login_failure(doc["id"], attempts, lockout)
+                    db_manager.add_audit_log(doc["id"], doc["name"], "LOGIN_FAILED", "127.0.0.1", f"Failed attempt {attempts}/5")
+                    self._send_json(401, {"status": "error", "message": f"Incorrect password. {max(0, 5 - attempts)} attempts remaining."})
+                    return
+
+                # Success
+                db_manager.update_doctor_login_success(doc["id"])
+                profile = {
+                    "id": doc["id"],
+                    "name": doc["name"],
+                    "email": doc["email"],
+                    "mciRegNumber": doc["mci_reg_number"],
+                    "department": doc["department"],
+                    "roomNumber": doc["room_number"],
+                    "role": doc["role"],
+                    "phone": doc["phone"],
+                    "avatar": doc["avatar"],
+                    "createdAt": str(doc.get("created_at")) if doc.get("created_at") else time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                    "lastLoginAt": str(doc.get("last_login_at")) if doc.get("last_login_at") else None,
+                }
+                session = db_manager.create_session(profile)
+                db_manager.add_audit_log(doc["id"], doc["name"], "LOGIN_SUCCESS", "127.0.0.1", f"Authenticated session issued: {session['token'][:8]}...")
+                self._send_json(200, {"status": "success", "session": session, "doctor": profile})
+            except Exception as err:
+                logger.error("[Auth Login Error] %s", err, exc_info=True)
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        if path == "/api/auth/register":
+            try:
+                payload = self._read_json_body()
+                password_plain = payload.get("passwordPlain") or payload.get("password", "")
+                ok, doc_profile, err_msg = db_manager.register_doctor(payload, password_plain)
+                if not ok:
+                    self._send_json(400, {"status": "error", "message": err_msg})
+                    return
+                db_manager.add_audit_log(doc_profile["id"], doc_profile["name"], "DOCTOR_REGISTERED", "127.0.0.1", f"Registered doctor {doc_profile['name']} ({doc_profile['mciRegNumber']})")
+                self._send_json(200, {"status": "success", "doctor": doc_profile})
+            except Exception as err:
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        if path == "/api/auth/logout":
+            try:
+                payload = self._read_json_body()
+                token = payload.get("token") or self.headers.get("Authorization", "").replace("Bearer ", "").strip()
+                db_manager.delete_session(token)
+                self._send_json(200, {"status": "success", "message": "Session terminated."})
+            except Exception as err:
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        # 2. Patient Cases
+        if path == "/api/cases":
+            try:
+                payload = self._read_json_body()
+                saved_case = db_manager.save_case(payload)
+                # Automatically index into medical vector DB for semantic lookup
+                try:
+                    vector_db.index_patient_case(saved_case)
+                except Exception as v_err:
+                    logger.warning("Vector indexing deferred: %s", v_err)
+                self._send_json(200, {"status": "success", "case": saved_case})
+            except Exception as err:
+                logger.error("[Save Case Error] %s", err, exc_info=True)
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        if path.startswith("/api/cases/") and path.endswith("/status"):
+            try:
+                case_id = path.replace("/api/cases/", "").replace("/status", "").strip()
+                payload = self._read_json_body()
+                status = payload.get("status", "Doctor Verified")
+                db_manager.update_case_status(case_id, status)
+                self._send_json(200, {"status": "success", "caseId": case_id, "caseStatus": status})
+            except Exception as err:
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        if path.startswith("/api/cases/") and path.endswith("/summary"):
+            try:
+                case_id = path.replace("/api/cases/", "").replace("/summary", "").strip()
+                payload = self._read_json_body()
+                summary = payload.get("summary", "")
+                db_manager.update_case_summary(case_id, summary)
+                self._send_json(200, {"status": "success", "caseId": case_id})
+            except Exception as err:
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        # 3. Vector Database Semantic Search Endpoints
+        if path == "/api/vector/search":
+            try:
+                payload = self._read_json_body()
+                query = payload.get("query", "")
+                entity_type = payload.get("entity_type")
+                top_k = int(payload.get("top_k", 5))
+                results = vector_db.search_all(query, entity_type=entity_type, top_k=top_k)
+                self._send_json(200, {"status": "success", "results": results})
+            except Exception as err:
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        if path == "/api/guidelines/search":
+            try:
+                payload = self._read_json_body()
+                query = payload.get("query", "")
+                top_k = int(payload.get("top_k", 3))
+                results = vector_db.search_similar_guidelines(query, top_k=top_k)
+                self._send_json(200, {"status": "success", "guidelines": results})
+            except Exception as err:
+                self._send_json(500, {"status": "error", "message": str(err)})
+            return
+
+        # 4. Existing Services
         if path == "/api/tts":
             self._handle_tts()
             return
@@ -701,7 +955,7 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
             return
 
         if path != "/api/transcribe":
-            self._send_json(404, {"status": "error", "message": "Endpoint not found. Use POST /api/transcribe, POST /api/tts, or POST /api/clinical-reasoning"})
+            self._send_json(404, {"status": "error", "message": "Endpoint not found"})
             return
 
         try:

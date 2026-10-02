@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { SUPPORTED_LANGUAGES, type Language } from '../../types';
 import { 
   ShieldCheck, 
   ArrowRight, 
@@ -18,22 +19,6 @@ interface WelcomeScreenProps {
   onContinue: () => void;
 }
 
-interface LanguageOption {
-  code: 'en' | 'or' | 'hi' | 'bn' | 'te' | 'mr';
-  label: string;
-  native: string;
-  description: string;
-}
-
-const LANGUAGES: LanguageOption[] = [
-  { code: 'en', label: 'English', native: 'English', description: 'Continue in English' },
-  { code: 'or', label: 'Odia', native: 'ଓଡ଼ିଆ', description: 'ଓଡ଼ିଆରେ ଆଗକୁ ବଢ଼ନ୍ତୁ' },
-  { code: 'hi', label: 'Hindi', native: 'हिन्दी', description: 'हिन्दी में जारी रखें' },
-  { code: 'bn', label: 'Bengali', native: 'বাংলা', description: 'বাংলায় এগিয়ে যান' },
-  { code: 'te', label: 'Telugu', native: 'తెలుగు', description: 'తెలుగులో కొనసాగించండి' },
-  { code: 'mr', label: 'Marathi', native: 'मराठी', description: 'मराठीत पुढे जा' },
-];
-
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onContinue }) => {
   const { currentLanguage, setLanguage } = useApp();
   const [selectedLang, setSelectedLang] = useState<string>(currentLanguage || 'or');
@@ -41,9 +26,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onContinu
 
   const handleSelectLanguage = (code: string) => {
     setSelectedLang(code);
-    if (code === 'or' || code === 'hi' || code === 'en') {
-      setLanguage(code);
-    }
+    setLanguage(code as Language);
   };
 
   const playPreviewAudio = (code: string, e: React.MouseEvent) => {
@@ -106,13 +89,13 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onContinu
             </p>
           </div>
           <div className="px-3 py-1 rounded-full bg-[#E5F3EB] text-[#145A4D] text-xs font-bold">
-            6 Indic Languages
+            13 Indic & English Languages
           </div>
         </div>
 
-        {/* 6-Language Touch Selection Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5 sm:gap-4">
-          {LANGUAGES.map((lang) => {
+        {/* 13-Language Touch Selection Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3.5 sm:gap-4 max-h-[380px] overflow-y-auto pr-1">
+          {SUPPORTED_LANGUAGES.map((lang) => {
             const isSelected = selectedLang === lang.code;
             return (
               <div
@@ -127,10 +110,10 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onContinu
                 <div className="flex items-start justify-between">
                   <div>
                     <span className="text-2xl font-extrabold text-[#142B25] block">
-                      {lang.native}
+                      {lang.nameNative}
                     </span>
                     <span className="text-xs font-semibold text-[#5B736B] mt-0.5 block">
-                      {lang.label}
+                      {lang.nameEn}
                     </span>
                   </div>
                   {isSelected ? (
@@ -142,7 +125,7 @@ export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onContinu
 
                 <div className="flex items-center justify-between mt-3 pt-2 border-t border-[#D8E3DC]/60">
                   <span className="text-[11px] font-medium text-[#5B736B] truncate pr-1">
-                    {lang.description}
+                    {lang.sampleVoice}
                   </span>
                   <button
                     type="button"

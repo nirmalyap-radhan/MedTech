@@ -65,8 +65,8 @@ const OCR_API_BASE =
 const OCR_ENDPOINT = `${OCR_API_BASE}/api/ocr`;
 const HEALTH_ENDPOINT = `${OCR_API_BASE}/api/health`;
 
-// Timeout for OCR requests — Donut model can take 10-30s on CPU
-const OCR_TIMEOUT_MS = 60_000;
+// Timeout for OCR requests — allow up to 120s for multi-page scan processing
+const OCR_TIMEOUT_MS = 120_000;
 
 // ──────────────────────────────────────────────────────────
 // Helpers

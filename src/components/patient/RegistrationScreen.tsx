@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../../context/AppContext';
+import { t } from '../../utils/i18n';
 import { ArrowRight, User, Phone, Calendar, Sparkles, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -41,11 +42,11 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
           </div>
 
           <h2 className="font-['Plus_Jakarta_Sans','Manrope'] text-2xl sm:text-3xl font-extrabold text-[#142B25] tracking-tight">
-            {currentLanguage === 'or' ? 'ରୋଗୀଙ୍କ ପରିଚୟ ସୂଚନା (Patient Demographics)' : 'Patient Details'}
+            {t('demographicsTitle', currentLanguage)}
           </h2>
 
           <p className="text-sm text-[#5B736B] mt-1 font-medium leading-relaxed">
-            Please enter basic identification details for OPD registration, clinical record matching, and queue allocation.
+            {t('demographicsDesc', currentLanguage)}
           </p>
         </div>
 
@@ -55,7 +56,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
           {/* Full Name */}
           <div className="space-y-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-[#142B25]">
-              Full Legal Name (ରୋଗୀଙ୍କ ପୂରା ନାମ) *
+              {t('fullNameLabel', currentLanguage)}
             </label>
             <div className="relative">
               <User className="w-5 h-5 text-[#145A4D] absolute left-4.5 top-1/2 -translate-y-1/2" />
@@ -64,7 +65,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
                 required
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g. Rajesh Mohanty"
+                placeholder="e.g. Sameer Kumar Das"
                 className="w-full h-15 pl-13 pr-4 bg-[#F8FAF7] border-2 border-[#D8E3DC] rounded-2xl text-base text-[#142B25] font-semibold focus:outline-none focus:border-[#145A4D] focus:bg-white focus:ring-4 focus:ring-[#145A4D]/10 transition-all"
               />
             </div>
@@ -76,7 +77,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
             {/* Age */}
             <div className="space-y-2">
               <label className="block text-xs font-bold uppercase tracking-wider text-[#142B25]">
-                Age in Years (ବୟସ) *
+                {t('ageLabel', currentLanguage)}
               </label>
               <div className="relative">
                 <Calendar className="w-5 h-5 text-[#145A4D] absolute left-4.5 top-1/2 -translate-y-1/2" />
@@ -87,7 +88,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
                   max={120}
                   value={formData.age}
                   onChange={(e) => setFormData({ ...formData, age: parseInt(e.target.value) || 0 })}
-                  placeholder="e.g. 42"
+                  placeholder="e.g. 45"
                   className="w-full h-15 pl-13 pr-4 bg-[#F8FAF7] border-2 border-[#D8E3DC] rounded-2xl text-base text-[#142B25] font-semibold focus:outline-none focus:border-[#145A4D] focus:bg-white focus:ring-4 focus:ring-[#145A4D]/10 transition-all"
                 />
               </div>
@@ -96,23 +97,26 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
             {/* Gender */}
             <div className="space-y-2">
               <label className="block text-xs font-bold uppercase tracking-wider text-[#142B25]">
-                Biological Gender (ଲିଙ୍ଗ) *
+                {t('genderLabel', currentLanguage)}
               </label>
               <div className="grid grid-cols-3 gap-2.5">
-                {(['Male', 'Female', 'Other'] as const).map((g) => (
-                  <button
-                    type="button"
-                    key={g}
-                    onClick={() => setFormData({ ...formData, gender: g })}
-                    className={`h-15 text-sm font-bold rounded-2xl border-2 transition-all cursor-pointer ${
-                      formData.gender === g
-                        ? 'bg-[#124E43] text-white border-[#124E43] shadow-sm ring-3 ring-[#124E43]/20'
-                        : 'bg-[#F8FAF7] text-[#142B25] border-[#D8E3DC] hover:border-[#145A4D] hover:bg-white'
-                    }`}
-                  >
-                    {g}
-                  </button>
-                ))}
+                {(['Male', 'Female', 'Other'] as const).map((g) => {
+                  const keyName = g === 'Male' ? 'male' : g === 'Female' ? 'female' : 'other';
+                  return (
+                    <button
+                      type="button"
+                      key={g}
+                      onClick={() => setFormData({ ...formData, gender: g })}
+                      className={`h-15 text-sm font-bold rounded-2xl border-2 transition-all cursor-pointer ${
+                        formData.gender === g
+                          ? 'bg-[#124E43] text-white border-[#124E43] shadow-sm ring-3 ring-[#124E43]/20'
+                          : 'bg-[#F8FAF7] text-[#142B25] border-[#D8E3DC] hover:border-[#145A4D] hover:bg-white'
+                      }`}
+                    >
+                      {currentLanguage === 'en' ? g : t(keyName, currentLanguage)}
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -121,7 +125,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
           {/* Patient Mobile / UHID */}
           <div className="space-y-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-[#142B25]">
-              Mobile Number / ABHA ID (ମୋବାଇଲ୍ ନମ୍ବର) *
+              {t('mobileLabel', currentLanguage)}
             </label>
             <div className="relative">
               <Phone className="w-5 h-5 text-[#145A4D] absolute left-4.5 top-1/2 -translate-y-1/2" />
@@ -130,7 +134,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
                 required
                 value={formData.mobile}
                 onChange={(e) => setFormData({ ...formData, mobile: e.target.value })}
-                placeholder="e.g. +91 98450 12890"
+                placeholder="e.g. +91 98610 23456"
                 className="w-full h-15 pl-13 pr-4 bg-[#F8FAF7] border-2 border-[#D8E3DC] rounded-2xl text-base text-[#142B25] font-semibold focus:outline-none focus:border-[#145A4D] focus:bg-white focus:ring-4 focus:ring-[#145A4D]/10 transition-all"
               />
             </div>
@@ -146,10 +150,10 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
               type="button"
               onClick={() =>
                 setFormData({
-                  name: 'Rajesh Mohanty',
-                  age: 42,
+                  name: 'Sameer Kumar Das',
+                  age: 45,
                   gender: 'Male',
-                  mobile: '+91 98450 12890',
+                  mobile: '+91 98610 23456',
                 })
               }
               className="text-xs font-bold text-[#145A4D] hover:underline cursor-pointer"
@@ -170,7 +174,7 @@ export const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNext }
               type="submit"
               className="h-15 px-10 bg-[#124E43] hover:bg-[#0B352E] text-white font-['Plus_Jakarta_Sans','Manrope'] font-bold text-base rounded-full shadow-md hover:shadow-lg flex items-center space-x-3 transition-all cursor-pointer group active:scale-98"
             >
-              <span>{currentLanguage === 'or' ? 'ଲକ୍ଷଣ ଓ ସ୍ୱାସ୍ଥ୍ୟ ଇତିହାସକୁ ଯାଆନ୍ତୁ' : currentLanguage === 'hi' ? 'लक्षण और इतिहास जारी रखें' : 'Continue to Symptoms & History'}</span>
+              <span>{t('continueBtn', currentLanguage)}</span>
               <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
             </button>
           </div>

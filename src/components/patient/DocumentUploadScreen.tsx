@@ -138,7 +138,7 @@ const CameraModal: React.FC<CameraModalProps> = ({ onCapture, onClose }) => {
 };
 
 export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNext, onBack }) => {
-  const { currentDraft, addDraftDocument, updateDraftDocument, currentLanguage } = useApp();
+  const { currentDraft, addDraftDocument, removeDraftDocument, updateDraftDocument, currentLanguage } = useApp();
 
   const [isScanning, setIsScanning] = useState(false);
   const [scanStepText, setScanStepText] = useState('Reading document...');
@@ -153,7 +153,10 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
   const [ocrError, setOcrError] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const activeDoc = currentDraft.documents.find((d) => d.id === selectedDocId) || currentDraft.documents[0];
+  const activeDoc =
+    currentDraft.documents.find((d) => d.id === selectedDocId) ||
+    currentDraft.documents[currentDraft.documents.length - 1] ||
+    null;
 
   // Derive rich, structured clinical data even if reading legacy or newly uploaded documents
   const parsedData = useMemo(() => {
@@ -244,57 +247,89 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
     });
   };
 
-  const runOCR = useCallback(async (file: File) => {
+  const processFiles = useCallback(async (files: File[]) => {
+    if (!files || files.length === 0) return;
     setIsScanning(true);
     setOcrError(null);
-    setScanStepText('Reading document with OCR...');
 
-    const result = await ocrService.processDocument(file, ({ message }) => {
-      setScanStepText(message);
-    });
+    let lastCreatedId: string | null = null;
+    const errors: string[] = [];
 
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const countPrefix = files.length > 1 ? `[${i + 1}/${files.length}] ` : '';
+      setScanStepText(`${countPrefix}Analyzing ${file.name}...`);
+
+      try {
+        const result = await ocrService.processDocument(file, ({ message }) => {
+          setScanStepText(`${countPrefix}${file.name}: ${message}`);
+        });
+
+        if (!result.ok) {
+          errors.push(`"${file.name}": ${result.errorMessage ?? 'OCR processing failed.'}`);
+          continue;
+        }
+
+        const rawType = result.documentType.toLowerCase();
+        let docType: OCRDocument['type'] = 'Prescription';
+        if (
+          rawType.includes('scan') ||
+          rawType.includes('mri') ||
+          rawType.includes('ct') ||
+          rawType.includes('radiol') ||
+          rawType.includes('xray') ||
+          rawType.includes('ecg') ||
+          rawType.includes('ekg') ||
+          rawType.includes('echo') ||
+          rawType.includes('ultrasound') ||
+          rawType.includes('usg')
+        ) {
+          docType = 'Scan Report';
+        } else if (rawType.includes('discharge')) {
+          docType = 'Discharge Summary';
+        } else if (rawType.includes('lab') || rawType.includes('blood') || rawType.includes('pathol') || rawType.includes('report') || rawType.includes('test')) {
+          docType = 'Lab Report';
+        }
+
+        const newId = 'doc-' + Math.floor(100 + Math.random() * 900);
+        const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+
+        const newDoc: OCRDocument = {
+          id: newId,
+          name: file.name || `Document_${newId}`,
+          type: docType,
+          date: today,
+          doctorName: result.doctorName || result.patientDetails?.doctorName || 'Not detected',
+          medicines: result.medicines,
+          structuredMedicines: result.structuredMedicines,
+          patientDetails: result.patientDetails,
+          handwrittenText: result.handwrittenText,
+          findings: result.diagnosis || result.extractedText.slice(0, 300) || 'No findings extracted',
+          confidenceScore: result.confidence,
+          rawExtractedText: result.extractedText,
+        };
+
+        addDraftDocument(newDoc);
+        lastCreatedId = newId;
+      } catch (err: any) {
+        errors.push(`"${file.name}": ${err.message || 'Error occurred during processing'}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      setOcrError(errors.join(' | '));
+    }
+    if (lastCreatedId) {
+      setSelectedDocId(lastCreatedId);
+    }
     setIsScanning(false);
-
-    if (!result.ok) {
-      setOcrError(result.errorMessage ?? 'OCR processing failed — please try again.');
-      return;
-    }
-
-    const rawType = result.documentType.toLowerCase();
-    let docType: OCRDocument['type'] = 'Prescription';
-    if (rawType.includes('scan') || rawType.includes('mri') || rawType.includes('ct') || rawType.includes('radiol') || rawType.includes('xray')) {
-      docType = 'Scan Report';
-    } else if (rawType.includes('discharge')) {
-      docType = 'Discharge Summary';
-    } else if (rawType.includes('lab') || rawType.includes('blood') || rawType.includes('report') || rawType.includes('test')) {
-      docType = 'Lab Report';
-    }
-
-    const newId = 'doc-' + Math.floor(100 + Math.random() * 900);
-    const today = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-
-    const newDoc: OCRDocument = {
-      id: newId,
-      name: file.name || `Document_${newId}`,
-      type: docType,
-      date: today,
-      doctorName: result.doctorName || result.patientDetails?.doctorName || 'Not detected',
-      medicines: result.medicines,
-      structuredMedicines: result.structuredMedicines,
-      patientDetails: result.patientDetails,
-      handwrittenText: result.handwrittenText,
-      findings: result.diagnosis || result.extractedText.slice(0, 200) || 'No findings extracted',
-      confidenceScore: result.confidence,
-      rawExtractedText: result.extractedText,
-    };
-
-    addDraftDocument(newDoc);
-    setSelectedDocId(newId);
   }, [addDraftDocument]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) runOCR(file);
+    const files = Array.from(e.target.files || []);
+    if (files.length > 0) {
+      processFiles(files);
+    }
     e.target.value = '';
   };
 
@@ -304,7 +339,7 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
 
   const handleCameraCapture = (file: File) => {
     setShowCamera(false);
-    runOCR(file);
+    processFiles([file]);
   };
 
   return (
@@ -312,6 +347,7 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
       <input
         ref={fileInputRef}
         type="file"
+        multiple
         accept="image/*,.pdf"
         className="hidden"
         onChange={handleFileChange}
@@ -364,8 +400,8 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
                 <Upload className="w-6 h-6 stroke-[2.2]" />
               </div>
               <div className="text-left">
-                <p className="text-sm font-bold text-[#142B25] uppercase tracking-wide">Upload Prescription</p>
-                <p className="text-xs text-[#5B736B]">Select file from USB or smartphone</p>
+                <p className="text-sm font-bold text-[#142B25] uppercase tracking-wide">Upload Documents / Reports</p>
+                <p className="text-xs text-[#5B736B]">Select one or multiple files (Prescription, MRI, CT, Lab)</p>
               </div>
             </button>
 
@@ -420,7 +456,7 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
                 <div>
                   <p className="text-base font-bold text-[#142B25] font-['Plus_Jakarta_Sans','Manrope']">{scanStepText}</p>
                   <p className="text-xs text-[#5B736B] mt-1 font-medium">
-                    Clinical OCR parsing medicines, frequency, and doctor notes...
+                    Multimodal clinical OCR parsing prescriptions, scan reports, and lab findings...
                   </p>
                 </div>
               </div>
@@ -430,20 +466,59 @@ export const DocumentUploadScreen: React.FC<DocumentUploadScreenProps> = ({ onNe
           {/* Extracted Document Information Section */}
           {activeDoc && !isScanning && (
             <div className="space-y-4 pt-1">
-              {currentDraft.documents.length > 1 && (
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-[#142B25] uppercase tracking-wider flex items-center space-x-1.5">
+                  <FileText className="w-3.5 h-3.5 text-[#145A4D]" />
+                  <span>Attached Documents ({currentDraft.documents.length})</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={openFilePicker}
+                  className="text-xs font-bold text-[#145A4D] hover:underline flex items-center space-x-1 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Attach Another File</span>
+                </button>
+              </div>
+
+              {currentDraft.documents.length > 0 && (
                 <div className="flex items-center space-x-2 overflow-x-auto pb-1">
                   {currentDraft.documents.map((doc) => (
-                    <button
+                    <div
                       key={doc.id}
                       onClick={() => setSelectedDocId(doc.id)}
-                      className={`px-4 py-2 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer ${
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center space-x-1.5 ${
                         activeDoc.id === doc.id
                           ? 'bg-[#124E43] text-white shadow-xs'
-                          : 'bg-[#F8FAF7] text-[#5B736B] border border-[#D8E3DC]'
+                          : 'bg-[#F8FAF7] text-[#5B736B] border border-[#D8E3DC] hover:border-[#145A4D]'
                       }`}
                     >
-                      {doc.name}
-                    </button>
+                      <span className="truncate max-w-[140px] sm:max-w-[200px]">{doc.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                        activeDoc.id === doc.id ? 'bg-[#0B352E] text-emerald-200' : 'bg-[#E5F3EB] text-[#145A4D]'
+                      }`}>
+                        {doc.type}
+                      </span>
+                      {currentDraft.documents.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeDraftDocument(doc.id);
+                            if (selectedDocId === doc.id) {
+                              const remaining = currentDraft.documents.filter((d) => d.id !== doc.id);
+                              setSelectedDocId(remaining[0]?.id || null);
+                            }
+                          }}
+                          className={`p-0.5 rounded-full hover:bg-black/10 transition-colors ml-0.5 ${
+                            activeDoc.id === doc.id ? 'text-white' : 'text-[#5B736B]'
+                          }`}
+                          title="Remove document"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

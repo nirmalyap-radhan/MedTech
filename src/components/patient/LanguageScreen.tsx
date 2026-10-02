@@ -1,42 +1,12 @@
 import React from 'react';
 import { useApp } from '../../context/AppContext';
-import type { Language } from '../../types';
+import { SUPPORTED_LANGUAGES } from '../../types';
 import { ArrowRight, Languages, Check, Volume2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface LanguageScreenProps {
   onNext: () => void;
 }
-
-const LANGUAGES: Array<{
-  id: Language;
-  nameNative: string;
-  nameEn: string;
-  subtext: string;
-  sampleVoice: string;
-}> = [
-  {
-    id: 'or',
-    nameNative: 'ଓଡ଼ିଆ',
-    nameEn: 'Odia',
-    subtext: 'ଓଡ଼ିଆ ଭାଷାରେ କଥାବାର୍ତ୍ତା କରନ୍ତୁ କିମ୍ବା ଲେଖନ୍ତୁ',
-    sampleVoice: '“ମୋ ନାମ ନିର୍ମଲ୍ୟ”',
-  },
-  {
-    id: 'hi',
-    nameNative: 'हिन्दी',
-    nameEn: 'Hindi',
-    subtext: 'हिन्दी भाषा में बातचीत करें या लिखें',
-    sampleVoice: '“मेरा नाम निर्मल्या है”',
-  },
-  {
-    id: 'en',
-    nameNative: 'English',
-    nameEn: 'English',
-    subtext: 'Speak or type your symptoms in English',
-    sampleVoice: '“My name is Nirmalya”',
-  },
-];
 
 export const LanguageScreen: React.FC<LanguageScreenProps> = ({ onNext }) => {
   const { currentLanguage, setLanguage } = useApp();
@@ -69,9 +39,9 @@ export const LanguageScreen: React.FC<LanguageScreenProps> = ({ onNext }) => {
           </p>
         </div>
 
-        {/* Large Accessible Language Cards */}
-        <div className="space-y-3.5">
-          {LANGUAGES.map((lang) => {
+        {/* Accessible Language Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 max-h-[440px] overflow-y-auto pr-1">
+          {SUPPORTED_LANGUAGES.map((lang) => {
             const isSelected = currentLanguage === lang.id;
             return (
               <button

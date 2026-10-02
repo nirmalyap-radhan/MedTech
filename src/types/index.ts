@@ -1,4 +1,154 @@
-export type Language = 'en' | 'hi' | 'or';
+export type Language =
+  | 'or' // Odia
+  | 'hi' // Hindi
+  | 'en' // English
+  | 'bn' // Bengali
+  | 'ta' // Tamil
+  | 'te' // Telugu
+  | 'kn' // Kannada
+  | 'ml' // Malayalam
+  | 'mr' // Marathi
+  | 'gu' // Gujarati
+  | 'pa' // Punjabi
+  | 'as' // Assamese
+  | 'ur'; // Urdu
+
+export interface LanguageMeta {
+  id: Language;
+  code: Language;
+  nameNative: string;
+  nameEn: string;
+  subtext: string;
+  sampleVoice: string;
+  sarvamCode: string;
+}
+
+export const SUPPORTED_LANGUAGES: LanguageMeta[] = [
+  {
+    id: 'or',
+    code: 'or',
+    nameNative: 'ଓଡ଼ିଆ',
+    nameEn: 'Odia',
+    subtext: 'ଓଡ଼ିଆ ଭାଷାରେ କଥାବାର୍ତ୍ତା କରନ୍ତୁ କିମ୍ବା ଲେଖନ୍ତୁ',
+    sampleVoice: '“ମୋ ନାମ ନିର୍ମଲ୍ୟ”',
+    sarvamCode: 'od-IN',
+  },
+  {
+    id: 'hi',
+    code: 'hi',
+    nameNative: 'हिन्दी',
+    nameEn: 'Hindi',
+    subtext: 'हिन्दी भाषा में बातचीत करें या लिखें',
+    sampleVoice: '“मेरा नाम निर्मल्या है”',
+    sarvamCode: 'hi-IN',
+  },
+  {
+    id: 'en',
+    code: 'en',
+    nameNative: 'English',
+    nameEn: 'English',
+    subtext: 'Speak or type your symptoms in English',
+    sampleVoice: '“My name is Nirmalya”',
+    sarvamCode: 'en-IN',
+  },
+  {
+    id: 'bn',
+    code: 'bn',
+    nameNative: 'বাংলা',
+    nameEn: 'Bengali',
+    subtext: 'বাংলা ভাষায় কথা বলুন বা লিখুন',
+    sampleVoice: '“আমার নাম নির্মল্য”',
+    sarvamCode: 'bn-IN',
+  },
+  {
+    id: 'ta',
+    code: 'ta',
+    nameNative: 'தமிழ்',
+    nameEn: 'Tamil',
+    subtext: 'தமிழில் பேசுங்கள் அல்லது எழுதுங்கள்',
+    sampleVoice: '“என் பெயர் நிர்மல்யா”',
+    sarvamCode: 'ta-IN',
+  },
+  {
+    id: 'te',
+    code: 'te',
+    nameNative: 'తెలుగు',
+    nameEn: 'Telugu',
+    subtext: 'తెలుగులో మాట్లాడండి లేదా రాయండి',
+    sampleVoice: '“నా పేరు నిర్మల్య”',
+    sarvamCode: 'te-IN',
+  },
+  {
+    id: 'kn',
+    code: 'kn',
+    nameNative: 'ಕನ್ನಡ',
+    nameEn: 'Kannada',
+    subtext: 'ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ ಅಥವಾ ಬರೆಯಿರಿ',
+    sampleVoice: '“ನನ್ನ ಹೆಸರು ನಿರ್ಮಲ್ಯ”',
+    sarvamCode: 'kn-IN',
+  },
+  {
+    id: 'ml',
+    code: 'ml',
+    nameNative: 'മലയാളം',
+    nameEn: 'Malayalam',
+    subtext: 'മലയാളത്തിൽ സംസാരിക്കുക അല്ലെങ്കിൽ എഴുതുക',
+    sampleVoice: '“എന്റെ പേര് നിർമ്മല്യ”',
+    sarvamCode: 'ml-IN',
+  },
+  {
+    id: 'mr',
+    code: 'mr',
+    nameNative: 'मराठी',
+    nameEn: 'Marathi',
+    subtext: 'मराठी भाषेत बोला किंवा लिहा',
+    sampleVoice: '“माझे नाव निर्मल्या आहे”',
+    sarvamCode: 'mr-IN',
+  },
+  {
+    id: 'gu',
+    code: 'gu',
+    nameNative: 'ગુજરાતી',
+    nameEn: 'Gujarati',
+    subtext: 'ગુજરાતી ભાષામાં બોલો અથવા લખો',
+    sampleVoice: '“મારું નામ નિર્મલ્ય છે”',
+    sarvamCode: 'gu-IN',
+  },
+  {
+    id: 'pa',
+    code: 'pa',
+    nameNative: 'ਪੰਜਾਬੀ',
+    nameEn: 'Punjabi',
+    subtext: 'ਪੰਜਾਬੀ ਭਾਸ਼ਾ ਵਿੱਚ ਗੱਲ ਕਰੋ ਜਾਂ ਲਿਖੋ',
+    sampleVoice: '“ਮੇਰਾ ਨਾਮ ਨਿਰਮਲਿਆ ਹੈ”',
+    sarvamCode: 'pa-IN',
+  },
+  {
+    id: 'as',
+    code: 'as',
+    nameNative: 'অসমীয়া',
+    nameEn: 'Assamese',
+    subtext: 'অসমীয়াত কথা কওক বা লিখক',
+    sampleVoice: '“মোৰ নাম নিৰ্মল্য”',
+    sarvamCode: 'as-IN',
+  },
+  {
+    id: 'ur',
+    code: 'ur',
+    nameNative: 'اردو',
+    nameEn: 'Urdu',
+    subtext: 'اردو میں بات کریں یا لکھیں',
+    sampleVoice: '“میرا نام نرملیا ہے”',
+    sarvamCode: 'ur-IN',
+  },
+];
+
+export function getLanguageLabel(langCode: string): string {
+  const lang = SUPPORTED_LANGUAGES.find((l) => l.code === langCode);
+  if (!lang) return langCode.toUpperCase();
+  if (lang.code === 'en') return 'English';
+  return `${lang.nameNative} (${lang.nameEn})`;
+}
 
 export interface Patient {
   id: string;
