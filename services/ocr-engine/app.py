@@ -6,14 +6,14 @@ import re
 import requests
 from PIL import Image
 from flask import Flask, request, jsonify
+from asgiref.wsgi import WsgiToAsgi
 
-app = Flask(__name__)
+flask_app = Flask(__name__)
 
 def load_gemini_api_key():
     key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
     if key:
         return key
-    # Try reading from parent directory .env files if running locally
     for parent in [os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "voice-api")]:
         env_file = os.path.join(parent, ".env")
@@ -109,7 +109,7 @@ Requirements:
                     m = re.search(r'\{[\s\S]*\}', raw_text)
                     if m:
                         try:
-                            return json.loads(m.group()), raw_text
+                            return json.loads(m.group())
                         except Exception:
                             pass
         except Exception as e:
@@ -118,8 +118,8 @@ Requirements:
 
     return None, "Gemini vision call failed"
 
-@app.route("/", methods=["GET"])
-@app.route("/api/health", methods=["GET"])
+@flask_app.route("/", methods=["GET"])
+@flask_app.route("/api/health", methods=["GET"])
 def health_check():
     return jsonify({
         "status": "ok",
@@ -127,7 +127,7 @@ def health_check():
         "gemini_key_configured": bool(GEMINI_API_KEY)
     })
 
-@app.route("/api/ocr", methods=["POST"])
+@flask_app.route("/api/ocr", methods=["POST"])
 def process_ocr():
     try:
         file = request.files.get("file") or request.files.get("image")
@@ -192,6 +192,9 @@ def process_ocr():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+# Export both ASGI (app) and WSGI (flask_app) interfaces
+app = WsgiToAsgi(flask_app)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 7860))
-    app.run(host="0.0.0.0", port=port)
+    flask_app.run(host="0.0.0.0", port=port)
