@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # 1. React Web Application
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_VOICE_API_URL=http://localhost:5000
+    depends_on:
+      - voice-api
+
+  # 2. Voice API & Clinical Reasoning Engine
+  voice-api:
+    build:
+      context: ./services/voice-api
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./services/voice-api/.env
+
+  # 3. Medical Prescription OCR Scanner Service
+  ocr-engine:
+    build:
+      context: ./services/ocr-engine
+      dockerfile: Dockerfile
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./services/voice-api/.env
+
+  # 4. PostgreSQL Database with pgvector & Schema Init
+  postgres:
+    image: ankane/pgvector:v0.5.1
+    container_name: medikiok_db
+    environment:
+      POSTGRES_DB: medikiok
+      POSTGRES_USER: medikiok_user
+      POSTGRES_PASSWORD: medikiok_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/schema.sql

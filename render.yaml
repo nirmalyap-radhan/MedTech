@@ -1,0 +1,39 @@
+services:
+  # 1. Main Web Application (Vite / React Frontend)
+  - type: web
+    name: medikiok-web
+    env: static
+    buildCommand: cd apps/web && npm install && npm run build
+    staticPublishPath: apps/web/dist
+
+  # 2. Voice API & Clinical Reasoning Engine (Python Backend)
+  - type: web
+    name: medikiok-voice-api
+    env: python
+    region: oregon
+    rootDir: services/voice-api
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: SARVAM_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PINECONE_API_KEY
+        sync: false
+
+  # 3. Medical Prescription OCR Scanner Engine (Python OCR Microservice)
+  - type: web
+    name: medikiok-ocr-engine
+    env: python
+    region: oregon
+    rootDir: services/ocr-engine
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: PORT
+        value: 5001
+      - key: GEMINI_API_KEY
+        sync: false
