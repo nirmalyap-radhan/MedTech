@@ -495,8 +495,14 @@ class DatabaseManager:
     def _init_postgres_tables(self):
         # Read schema.sql and apply
         try:
-            schema_path = BASE_DIR.parent / "schema.sql"
-            if schema_path.exists():
+            candidate_paths = [
+                BASE_DIR.parent.parent / "database" / "schema.sql",
+                BASE_DIR.parent / "database" / "schema.sql",
+                BASE_DIR.parent / "schema.sql",
+                BASE_DIR / "schema.sql"
+            ]
+            schema_path = next((p for p in candidate_paths if p.exists()), None)
+            if schema_path:
                 sql_content = schema_path.read_text(encoding="utf-8")
                 conn = self._get_pg_conn()
                 if conn:

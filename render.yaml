@@ -17,11 +17,17 @@ services:
     envVars:
       - key: PORT
         value: 5000
+      - key: DATABASE_URL
+        sync: false
       - key: SARVAM_API_KEY
         sync: false
       - key: GEMINI_API_KEY
         sync: false
-      - key: PINECONE_API_KEY
+      - key: VECTOR_DB_URL
+        sync: false
+      - key: VECTOR_DB_API_KEY
+        sync: false
+      - key: JWT_SECRET
         sync: false
 
   # 3. Medical Prescription OCR Scanner Engine (Python OCR Microservice)
