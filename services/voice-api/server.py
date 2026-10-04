@@ -938,11 +938,20 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
                 self._send_json(400, {"status": "error", "message": "Text parameter is required."})
                 return
 
-            lang_code = "od-IN"
-            if language in ("hi", "hindi"):
-                lang_code = "hi-IN"
-            elif language in ("en", "english"):
-                lang_code = "en-IN"
+            sarvam_lang_map = {
+                "or": "od-IN", "odia": "od-IN", "od-in": "od-IN",
+                "hi": "hi-IN", "hindi": "hi-IN", "hi-in": "hi-IN",
+                "en": "en-IN", "english": "en-IN", "en-in": "en-IN",
+                "bn": "bn-IN", "bengali": "bn-IN", "bn-in": "bn-IN",
+                "te": "te-IN", "telugu": "te-IN", "te-in": "te-IN",
+                "ta": "ta-IN", "tamil": "ta-IN", "ta-in": "ta-IN",
+                "mr": "mr-IN", "marathi": "mr-IN", "mr-in": "mr-IN",
+                "gu": "gu-IN", "gujarati": "gu-IN", "gu-in": "gu-IN",
+                "kn": "kn-IN", "kannada": "kn-IN", "kn-in": "kn-IN",
+                "ml": "ml-IN", "malayalam": "ml-IN", "ml-in": "ml-IN",
+                "pa": "pa-IN", "punjabi": "pa-IN", "pa-in": "pa-IN",
+            }
+            lang_code = sarvam_lang_map.get(language, "od-IN")
 
             cache_key_full = f"{language}:{text}"
             audio_b64 = TTS_CACHE.get(text) or TTS_CACHE.get(cache_key_full)
