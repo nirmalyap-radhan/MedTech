@@ -1,24 +1,37 @@
 /**
  * ttsService.ts
  * -------------
- * Text-to-Speech service for MediKiok Voice-Guided Patient Intake.
+ * Text-to-Speech service for MediKiok Multilingual Clinical Intake.
  *
- * Speeds up accessibility by speaking questions aloud in Odia (or user's selected language).
+ * Guarantees consistent playback across Desktop Chrome, Safari (macOS/iOS),
+ * Mobile Chrome, and modern mobile browsers:
  *
- * Key guarantees:
- * 1. Strict Request ID & AbortController tracking:
- *    When stop() is called (on skip, next, back, or unmount), any in-flight
- *    backend TTS fetch is aborted IMMEDIATELY and discarded. It NEVER plays
- *    audio for a previously skipped question.
- * 2. Instant In-Memory Audio Caching & Background Pre-fetching:
- *    Intake questions are prefetched and cached so audio plays with 0ms
- *    network latency instead of waiting 2 seconds.
- * 3. Dedicated Odia TTS Guard:
- *    Avoids browser SpeechSynthesis for Odia because browsers lack Odia phoneme
- *    models (which causes audio stuttering, queue hangs, and repeat bugs).
+ * 1. Proactive Hardware Audio Unlock:
+ *    Primes AudioContext and hardware output with a silent buffer on first user touch/click.
+ *    Bypasses iOS Safari and Mobile Chrome autoplay restrictions for async fetches.
+ *
+ * 2. Robust Web Audio Decoding:
+ *    Handles WebKit's legacy callback-based and standard Promise-based decodeAudioData,
+ *    passing memory slice copies to avoid buffer detachment.
+ *
+ * 3. Centralized Language & Locale Alignment:
+ *    Normalizes language codes and uses Sarvam's official provider codes (od-IN, hi-IN, etc.)
+ *    for backend synthesis, falling back to installed browser voices when available.
+ *
+ * 4. Request Isolation & 0ms Latency Pre-fetching:
+ *    In-flight requests are tracked and aborted immediately on question transition.
+ *    Audio is cached in-memory so question transitions feel instant.
+ *
+ * 5. Structured Diagnostic Logging:
+ *    Reports language, locale, browser platform, and fallback status without exposing credentials.
  */
 
 import { VOICE_TTS_ENDPOINT } from './apiConfig';
+import {
+  getBrowserSpeechLocale,
+  getBrowserDiagnosticInfo,
+  getSarvamLanguageCode,
+} from '../utils/languageUtils';
 
 class TTSService {
   private currentAudio: HTMLAudioElement | null = null;
@@ -28,6 +41,7 @@ class TTSService {
   private currentRequestId: number = 0;
   private abortController: AbortController | null = null;
   private audioCache: Map<string, string> = new Map();
+  private isUnlocked: boolean = false;
 
   private backendTtsUrl: string = VOICE_TTS_ENDPOINT;
 
@@ -36,24 +50,38 @@ class TTSService {
   }
 
   /**
-   * Proactively unlock AudioContext on user interaction so Safari permits async playback
+   * Proactively unlock AudioContext and audio hardware on user gesture
+   * so iOS Safari and Mobile Chrome allow subsequent asynchronous audio playback.
    */
   private initAudioUnlock(): void {
     if (typeof window === 'undefined') return;
+
     const unlock = () => {
+      if (this.isUnlocked) return;
       try {
         const ctx = this.getAudioContext();
-        if (ctx && ctx.state === 'suspended') {
-          ctx.resume();
+        if (ctx) {
+          if (ctx.state === 'suspended') {
+            ctx.resume();
+          }
+          // Genuine hardware unlock: play 1 silent frame through audio output
+          const buffer = ctx.createBuffer(1, 1, 22050);
+          const source = ctx.createBufferSource();
+          source.buffer = buffer;
+          source.connect(ctx.destination);
+          source.start(0);
+          this.isUnlocked = true;
+          console.log('[TTS] AudioContext successfully primed for mobile/Safari session.');
         }
-      } catch {
-        // Ignore
+      } catch (e) {
+        // Ignore audio unlock exceptions
       }
     };
-    window.addEventListener('click', unlock, { passive: true });
-    window.addEventListener('touchstart', unlock, { passive: true });
-    window.addEventListener('touchend', unlock, { passive: true });
-    window.addEventListener('keydown', unlock, { passive: true });
+
+    window.addEventListener('click', unlock, { passive: true, once: true });
+    window.addEventListener('touchstart', unlock, { passive: true, once: true });
+    window.addEventListener('touchend', unlock, { passive: true, once: true });
+    window.addEventListener('keydown', unlock, { passive: true, once: true });
   }
 
   public getAudioContext(): AudioContext | null {
@@ -70,7 +98,7 @@ class TTSService {
    * Stop any current speech synthesis, HTML5 audio, or pending network fetch immediately.
    */
   public stop(): void {
-    // 1. Invalidate any in-flight request immediately
+    // 1. Invalidate in-flight request ID
     this.currentRequestId++;
     this.isCurrentlySpeaking = false;
 
@@ -84,7 +112,7 @@ class TTSService {
       this.abortController = null;
     }
 
-    // 3. Stop and disconnect Web Audio BufferSource if active
+    // 3. Stop and disconnect Web Audio BufferSource if playing
     if (this.currentBufferSource) {
       try {
         this.currentBufferSource.stop();
@@ -145,7 +173,7 @@ class TTSService {
         }
       }
     } catch {
-      // Ignore background prefetch errors
+      // Ignore background prefetch network errors
     }
   }
 
@@ -164,7 +192,11 @@ class TTSService {
     this.abortController = new AbortController();
     this.isCurrentlySpeaking = true;
 
-    // First attempt: Backend Sarvam bulbul:v3 for studio-grade authentic speech
+    const browserInfo = getBrowserDiagnosticInfo();
+    const sarvamCode = getSarvamLanguageCode(language);
+    const bcpLocale = getBrowserSpeechLocale(language);
+
+    // Primary: Backend Sarvam bulbul:v3 for studio-grade authentic speech
     try {
       const played = await this.speakViaBackend(text, language, myRequestId, this.abortController.signal);
       if (myRequestId !== this.currentRequestId) {
@@ -176,7 +208,7 @@ class TTSService {
       }
     } catch (err: any) {
       if (err.name !== 'AbortError') {
-        console.warn('[TTS] Backend TTS failed:', err);
+        console.warn(`[TTS Diagnostic] Backend synthesis failed for '${language}' (${sarvamCode}) on ${browserInfo}:`, err?.message || err);
       }
     }
 
@@ -184,26 +216,51 @@ class TTSService {
       return false;
     }
 
-    // For non-English Indic scripts without native browser TTS voices, don't garble speech
-    if (['or', 'bn', 'ta', 'te', 'kn', 'ml', 'mr', 'gu', 'pa', 'as', 'ur'].includes(language)) {
-      this.isCurrentlySpeaking = false;
-      return false;
-    }
-
-    // Fallback attempt: Browser SpeechSynthesis for Hindi/English
+    // Secondary Fallback: Check if browser SpeechSynthesis has a matching voice for this language
     try {
-      const played = await this.speakViaBrowser(text, language, myRequestId);
-      if (myRequestId === this.currentRequestId) {
+      const hasBrowserVoice = this.hasBrowserVoiceForLanguage(language);
+      if (hasBrowserVoice) {
+        console.info(
+          `[TTS Diagnostic] Falling back to browser SpeechSynthesis for '${language}' (${bcpLocale}) on ${browserInfo}.`
+        );
+        const played = await this.speakViaBrowser(text, language, myRequestId);
+        if (myRequestId === this.currentRequestId) {
+          this.isCurrentlySpeaking = false;
+        }
+        return played;
+      } else {
+        console.warn(
+          `[TTS Diagnostic] Audio playback unavailable for '${language}' (Sarvam: ${sarvamCode}, Locale: ${bcpLocale}) on ${browserInfo}. Backend failed and browser has no native speech voice installed for this language.`
+        );
         this.isCurrentlySpeaking = false;
+        return false;
       }
-      return played;
-    } catch (err) {
-      console.warn('[TTS] Browser SpeechSynthesis failed:', err);
+    } catch (browserErr) {
+      console.warn(
+        `[TTS Diagnostic] Browser SpeechSynthesis failed for '${language}' (${bcpLocale}) on ${browserInfo}:`,
+        browserErr
+      );
       if (myRequestId === this.currentRequestId) {
         this.isCurrentlySpeaking = false;
       }
       return false;
     }
+  }
+
+  /**
+   * Checks whether the current browser has an installed speech voice for this language
+   */
+  private hasBrowserVoiceForLanguage(language: string): boolean {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return false;
+    }
+    const bcpLocale = getBrowserSpeechLocale(language).toLowerCase();
+    const langId = language.toLowerCase();
+    const voices = window.speechSynthesis.getVoices();
+    return voices.some((v) => {
+      const vLang = v.lang.toLowerCase().replace('_', '-');
+      return vLang === bcpLocale || vLang.startsWith(`${langId}-`) || vLang === langId;
+    });
   }
 
   /**
@@ -280,8 +337,32 @@ class TTSService {
         if (ctx.state === 'suspended') {
           await ctx.resume();
         }
-        // WebKit requires a slice copy for decodeAudioData
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+
+        // WebKit dual-mode decodeAudioData (Promise + callback support)
+        const audioBuffer = await new Promise<AudioBuffer>((resolve, reject) => {
+          const copy = arrayBuffer.slice(0);
+          let settled = false;
+          const onSuccess = (buf: AudioBuffer) => {
+            if (!settled) {
+              settled = true;
+              resolve(buf);
+            }
+          };
+          const onError = (err: any) => {
+            if (!settled) {
+              settled = true;
+              reject(err);
+            }
+          };
+          try {
+            const p = ctx.decodeAudioData(copy, onSuccess, onError);
+            if (p && typeof (p as any).then === 'function') {
+              (p as any).then(onSuccess).catch(onError);
+            }
+          } catch (e) {
+            onError(e);
+          }
+        });
 
         if (signal.aborted || requestId !== this.currentRequestId) {
           return false;
@@ -303,7 +384,7 @@ class TTSService {
           source.start(0);
         });
       } catch (audioCtxErr) {
-        console.warn('[TTS] Web Audio API failed, trying HTML5 Audio fallback:', audioCtxErr);
+        console.warn('[TTS] Web Audio API playback failed, trying HTML5 Audio fallback:', audioCtxErr);
       }
     }
 
@@ -349,7 +430,7 @@ class TTSService {
 
       audio.onerror = (e) => {
         cleanup();
-        console.warn('[TTS] Audio playback error:', e);
+        console.warn('[TTS] HTML5 Audio playback error:', e);
         resolve(false);
       };
 
@@ -362,7 +443,7 @@ class TTSService {
       audio.play().catch((err) => {
         cleanup();
         if (err.name !== 'AbortError') {
-          console.warn('[TTS] Play promise rejected:', err);
+          console.warn('[TTS] Audio.play() rejected (autoplay restricted):', err);
         }
         resolve(false);
       });
@@ -386,13 +467,14 @@ class TTSService {
       utterance.rate = 0.95;
       utterance.pitch = 1.0;
 
-      const langCode = language === 'hi' ? 'hi-IN' : 'en-IN';
+      const langCode = getBrowserSpeechLocale(language);
       utterance.lang = langCode;
 
       const voices = window.speechSynthesis.getVoices();
-      const matchingVoice = voices.find(
-        (v) => v.lang.toLowerCase().startsWith(language)
-      );
+      const matchingVoice = voices.find((v) => {
+        const vLang = v.lang.toLowerCase().replace('_', '-');
+        return vLang === langCode.toLowerCase() || vLang.startsWith(language.toLowerCase());
+      });
       if (matchingVoice) {
         utterance.voice = matchingVoice;
       }
@@ -412,8 +494,8 @@ class TTSService {
       utterance.onend = () => done(true);
       utterance.onerror = () => done(false);
 
-      // Safety timeout: max 4.5 seconds so voice intake never hangs
-      setTimeout(() => done(true), 4500);
+      // Safety timeout: max 5.0 seconds so voice intake never hangs
+      setTimeout(() => done(true), 5000);
 
       window.speechSynthesis.speak(utterance);
     });

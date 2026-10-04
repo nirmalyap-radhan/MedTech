@@ -82,36 +82,64 @@ else:
 # Language code mapping
 # ------------------------------------------------------------------
 LANG_CODE_MAP = {
-    "odia": "od-IN",
-    "or": "od-IN",
-    "hindi": "hi-IN",
-    "hi": "hi-IN",
-    "english": "en-IN",
-    "en": "en-IN",
-    "tamil": "ta-IN",
-    "ta": "ta-IN",
-    "telugu": "te-IN",
-    "te": "te-IN",
-    "kannada": "kn-IN",
-    "kn": "kn-IN",
-    "bengali": "bn-IN",
-    "bn": "bn-IN",
-    "gujarati": "gu-IN",
-    "gu": "gu-IN",
-    "marathi": "mr-IN",
-    "mr": "mr-IN",
-    "punjabi": "pa-IN",
-    "pa": "pa-IN",
-    "malayalam": "ml-IN",
-    "ml": "ml-IN",
-    "assamese": "as-IN",
-    "as": "as-IN",
-    "urdu": "ur-IN",
-    "ur": "ur-IN",
+    # Odia
+    "odia": "od-IN", "or": "od-IN", "od": "od-IN", "or-in": "od-IN", "od-in": "od-IN",
+    # Hindi
+    "hindi": "hi-IN", "hi": "hi-IN", "hi-in": "hi-IN",
+    # English
+    "english": "en-IN", "en": "en-IN", "en-in": "en-IN", "en-us": "en-IN", "en-gb": "en-IN",
+    # Bengali
+    "bengali": "bn-IN", "bn": "bn-IN", "bn-in": "bn-IN",
+    # Tamil
+    "tamil": "ta-IN", "ta": "ta-IN", "ta-in": "ta-IN",
+    # Telugu
+    "telugu": "te-IN", "te": "te-IN", "te-in": "te-IN",
+    # Marathi
+    "marathi": "mr-IN", "mr": "mr-IN", "mr-in": "mr-IN",
+    # Gujarati
+    "gujarati": "gu-IN", "gu": "gu-IN", "gu-in": "gu-IN",
+    # Kannada
+    "kannada": "kn-IN", "kn": "kn-IN", "kn-in": "kn-IN",
+    # Malayalam
+    "malayalam": "ml-IN", "ml": "ml-IN", "ml-in": "ml-IN",
+    # Punjabi
+    "punjabi": "pa-IN", "pa": "pa-IN", "pa-in": "pa-IN",
+    # Assamese
+    "assamese": "as-IN", "as": "as-IN", "as-in": "as-IN",
+    # Urdu
+    "urdu": "ur-IN", "ur": "ur-IN", "ur-in": "ur-IN",
+}
+
+LANGUAGE_NAMES = {
+    "od-IN": "Odia",
+    "hi-IN": "Hindi",
+    "en-IN": "English",
+    "bn-IN": "Bengali",
+    "ta-IN": "Tamil",
+    "te-IN": "Telugu",
+    "mr-IN": "Marathi",
+    "gu-IN": "Gujarati",
+    "kn-IN": "Kannada",
+    "ml-IN": "Malayalam",
+    "pa-IN": "Punjabi",
+    "as-IN": "Assamese",
+    "ur-IN": "Urdu",
 }
 
 def resolve_lang_code(lang: str) -> str:
-    return LANG_CODE_MAP.get(lang.lower().strip(), "od-IN")
+    if not lang:
+        return "od-IN"
+    cleaned = lang.strip().lower()
+    if cleaned in LANG_CODE_MAP:
+        return LANG_CODE_MAP[cleaned]
+    # Check base code before delimiter (e.g., 'te' from 'te-IN' or 'te_IN')
+    base = cleaned.replace("_", "-").split("-")[0]
+    if base in LANG_CODE_MAP:
+        return LANG_CODE_MAP[base]
+    if "-" in cleaned:
+        parts = cleaned.split("-")
+        return f"{parts[0]}-{parts[1].upper()}"
+    return "od-IN"
 
 
 # ------------------------------------------------------------------
@@ -264,10 +292,11 @@ def call_sarvam_tts(text: str, language_code: str = "od-IN") -> str:
 # Gemini Flash Clinical Reasoning & Adaptive Question Generator
 # ------------------------------------------------------------------
 
-def get_fallback_clinical_reasoning(dialogue_history: list, patient_info: dict, latest_regional: str, latest_english: str) -> dict:
+def get_fallback_clinical_reasoning(dialogue_history: list, patient_info: dict, latest_regional: str, latest_english: str, language: str = "or") -> dict:
     """
     Intelligent Medical Knowledge Graph engine for clinical intake reasoning
     when Gemini API key is not present or during offline fallback.
+    Supports all regional Indic languages (Odia, Hindi, Bengali, Tamil, Telugu, Marathi, etc.).
     """
     combined_text = (
         " ".join([t.get("answer_english", "") + " " + t.get("answer_regional", "") for t in dialogue_history])
@@ -459,6 +488,79 @@ def get_fallback_clinical_reasoning(dialogue_history: list, patient_info: dict, 
             "is_terminal": True,
         }
 
+    # Populate text_regional and placeholder_regional for active language
+    if next_q:
+        norm_lang = resolve_lang_code(language)
+        lang_id = norm_lang.split("-")[0].lower()
+
+        REGIONAL_FALLBACK_TEXTS = {
+            "bn": {
+                "dyn_q_2": "কত দিন ধরে আপনার এই সমস্যা হচ্ছে এবং এটি কি হঠাৎ শুরু হয়েছিল?",
+                "dyn_q_3_fever": "আপনার কি কাঁপুনি দিয়ে জ্বর, তীব্র মাথাব্যথা বা শরীরে ব্যথা আছে?",
+                "dyn_q_3_general": "আপনার কি কাশি, শ্বাসকষ্ট বা বুকে ভারী ভাব আছে?",
+                "dyn_q_4_fever": "আপনার শরীরে কোনো লাল দাগ, চোখের পেছনে ব্যথা বা রক্তপাত হয়েছে কি?",
+                "dyn_q_4_general": "আপনি কি অতিরিক্ত দুর্বলতা, মাথা ঘোরা বা ক্ষুধামন্দা অনুভব করছেন?",
+                "dyn_q_5": "আপনার কি উচ্চ রক্তচাপ, ডায়াবেটিস বা হাঁপানির মতো কোনো পূর্ববর্তী রোগ আছে?",
+                "dyn_q_6": "আপনি কি বর্তমানে কোনো নিয়মিত ওষুধ বা জ্বরের ওষুধ খাচ্ছেন?",
+                "dyn_q_7": "পেনিসিলিন জাতীয় কোনো ওষুধ বা খাবারে কি আপনার অ্যালার্জি আছে?",
+                "dyn_q_done": "ধন্যবাদ। আপনার তথ্য সংগ্রহ সম্পন্ন হয়েছে।",
+            },
+            "te": {
+                "dyn_q_2": "మీకు ఈ సమస్య ఎన్ని రోజులుగా ఉంది మరియు ఇది అకస్మాత్తుగా ప్రారంభమైందా?",
+                "dyn_q_3_fever": "మీకు చలితో కూడిన జ్వరం, తీవ్రమైన తలనొప్పి లేదా ఒంటి నొప్పులు ఉన్నాయా?",
+                "dyn_q_3_general": "మీకు దగ్గు, శ్వాస తీసుకోవడంలో ఇబ్బంది లేదా ఛాతీలో బరువుగా ఉందా?",
+                "dyn_q_4_fever": "మీ శరీరంపై ఏవైనా దద్దుర్లు లేదా కళ్ళ వెనుక నొప్పి ఉన్నాయా?",
+                "dyn_q_4_general": "మీకు అధిక బలహీనత లేదా తలతిరగడం అనిపిస్తుందా?",
+                "dyn_q_5": "మీకు హై బీపీ, మధుమేహం లేదా ఆస్తమా వంటి మునుపటి సమస్యలు ఉన్నాయా?",
+                "dyn_q_6": "మీరు ప్రస్తుతం ఏవైనా సాధారణ మందులు లేదా జ్వరం మాత్రలు వాడుతున్నారా?",
+                "dyn_q_7": "పెన్సిలిన్ వంటి మందులు లేదా ఏదైనా ఆహారం వల్ల మీకు అలెర్జీ ఉందా?",
+                "dyn_q_done": "ధన్యవాదాలు. మీ సమాచార సేకరణ పూర్తయింది.",
+            },
+            "ta": {
+                "dyn_q_2": "இந்த பிரச்சனை எத்தனை நாட்களாக உள்ளது, திடீரென தொடங்கியதா?",
+                "dyn_q_3_fever": "உங்களுக்கு நடுக்கத்துடன் காய்ச்சல், தலைவலி அல்லது உடல் வலி உள்ளதா?",
+                "dyn_q_3_general": "உங்களுக்கு இருமல், மூச்சுத் திணறல் அல்லது நெஞ்சு பாரம் உள்ளதா?",
+                "dyn_q_4_fever": "உடலில் ஏதேனும் தடிப்புகள் அல்லது கண்களுக்குப் பின்னால் வலி உள்ளதா?",
+                "dyn_q_4_general": "அதிக சோர்வு அல்லது தலைச்சுற்றல் உணர்கிறீர்களா?",
+                "dyn_q_5": "உங்களுக்கு ரத்த அழுத்தம், சர்க்கரை நோய் அல்லது ஆஸ்துமா உள்ளதா?",
+                "dyn_q_6": "நீங்கள் தற்போது ஏதேனும் வழக்கமான மாத்திரைகள் சாப்பிடுகிறீர்களா?",
+                "dyn_q_7": "மருந்துகள் அல்லது உணவுகளால் ஏதேனும் ஒவ்வாமை (அலர்ஜி) உள்ளதா?",
+                "dyn_q_done": "நன்றி. உங்கள் பதிவு முடிந்தது.",
+            },
+            "mr": {
+                "dyn_q_2": "तुम्हाला हा त्रास किती दिवसांपासून होत आहे आणि तो अचानक सुरू झाला का?",
+                "dyn_q_3_fever": "तुम्हाला थंडी वाजून ताप, तीव्र डोकेदुखी किंवा अंगदुखी आहे का?",
+                "dyn_q_3_general": "तुम्हाला खोकला, श्वास घेण्यास त्रास किंवा छातीत जडपणा जाणवतो का?",
+                "dyn_q_4_fever": "अंगावर पुरळ किंवा डोळ्यांच्या मागे दुखणे आहे का?",
+                "dyn_q_4_general": "खूप जास्त थकवा किंवा चक्कर येणे जाणवत आहे का?",
+                "dyn_q_5": "तुम्हाला उच्च रक्तदाब, मधुमेह किंवा दम्यासारखा जुना आजার आहे का?",
+                "dyn_q_6": "तुम्ही सध्या काही नियमित औषधे किंवा तापाची गोळी घेत आहात का?",
+                "dyn_q_7": "पेनिसिलिनसारख्या औषधांची किंवा अन्नाची काही ॲलर्जी आहे का?",
+                "dyn_q_done": "धन्यवाद. तुमची माहिती नोंदवली गेली आहे.",
+            },
+        }
+
+        q_id = next_q.get("id", "")
+        lookup_key = q_id
+        if q_id in ("dyn_q_3", "dyn_q_4"):
+            lookup_key = f"{q_id}_{'fever' if is_fever else 'general'}"
+
+        if lang_id in ("or", "od"):
+            next_q["text_regional"] = next_q.get("text_or") or next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_or") or next_q.get("placeholder_en")
+        elif lang_id == "hi":
+            next_q["text_regional"] = next_q.get("text_hi") or next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_hi") or next_q.get("placeholder_en")
+        elif lang_id == "en":
+            next_q["text_regional"] = next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_en")
+        elif lang_id in REGIONAL_FALLBACK_TEXTS and lookup_key in REGIONAL_FALLBACK_TEXTS[lang_id]:
+            next_q["text_regional"] = REGIONAL_FALLBACK_TEXTS[lang_id][lookup_key]
+            next_q["placeholder_regional"] = "Select Yes / No or speak"
+        else:
+            next_q["text_regional"] = next_q.get("text_hi") or next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_hi") or next_q.get("placeholder_en")
+
     return {
         "status": "success",
         "source": "medical-knowledge-graph-engine",
@@ -477,15 +579,15 @@ def get_fallback_clinical_reasoning(dialogue_history: list, patient_info: dict, 
     }
 
 
-def call_gemini_clinical_engine(dialogue_history: list, patient_info: dict, latest_regional: str, latest_english: str) -> dict:
+def call_gemini_clinical_engine(dialogue_history: list, patient_info: dict, latest_regional: str, latest_english: str, language: str = "or") -> dict:
     """
-    POST clinical conversation to Gemini Flash (1.5-flash) to derive:
+    POST clinical conversation to Gemini Flash (1.5-flash / 2.5-flash) to derive:
       1. Clinical considerations / differential diagnosis / red flags / AYUSH dosha correlation
-      2. The single next best clinical follow-up question in English, Odia, and Hindi.
+      2. The single next best clinical follow-up question in English, Odia, Hindi, and active regional language.
     """
     if not GEMINI_API_KEY:
         logger.info("[Gemini Flash] No API key set in .env. Using Medical Knowledge Graph engine.")
-        return get_fallback_clinical_reasoning(dialogue_history, patient_info, latest_regional, latest_english)
+        return get_fallback_clinical_reasoning(dialogue_history, patient_info, latest_regional, latest_english, language=language)
 
     endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
 
@@ -500,13 +602,17 @@ def call_gemini_clinical_engine(dialogue_history: list, patient_info: dict, late
         a_eng = turn.get("answer_english", "")
         history_str += f"Turn {idx+1}:\n- Question: {q}\n- Patient Odia Answer: {a_reg}\n- English Translation: {a_eng}\n"
 
+    lang_code = resolve_lang_code(language)
+    lang_name = LANGUAGE_NAMES.get(lang_code, "Odia")
+
     system_instruction = (
-        "You are an expert AI Clinical Intake Physician for an Indian hospital OPD Kiosk in Odisha, India (e.g. AIIMS Bhubaneswar). "
-        "You receive structured conversational patient intake history in Odia and translated English. "
+        "You are an expert AI Clinical Intake Physician for an Indian hospital OPD Kiosk. "
+        "You receive structured conversational patient intake history in the patient's language and translated English. "
         "Your role is two-fold:\n"
         "1. CLINICAL CONSIDERATIONS: Synthesize real-time differential diagnosis considerations, identified symptoms, clinical red-flags, and AYUSH (Prakriti/Vikriti/Agni) correlation for the consulting doctor's case sheet.\n"
-        "2. NEXT BEST QUESTION: Formulate the single most clinically relevant, focused follow-up question. "
-        "Provide accurate, fluent, empathetic translations in English, Odia (authentic Odia script), and Hindi. "
+        f"2. NEXT BEST QUESTION: Formulate the single most clinically relevant, focused follow-up question. "
+        f"The patient's active preferred language is {lang_name} ({lang_code}). "
+        f"Provide accurate, fluent translations in English ('text_en'), Odia ('text_or'), Hindi ('text_hi'), and in the patient's preferred language '{lang_name}' as 'text_regional' and 'placeholder_regional'. "
         "Keep the question concise and easy for a patient to answer via microphone.\n\n"
         "Output ONLY a valid JSON object matching this schema:\n"
         "{\n"
@@ -528,9 +634,11 @@ def call_gemini_clinical_engine(dialogue_history: list, patient_info: dict, late
         '    "text_en": "English question text",\n'
         '    "text_or": "Odia script question text",\n'
         '    "text_hi": "Hindi script question text",\n'
+        f'    "text_regional": "{lang_name} script question text",\n'
         '    "placeholder_en": "English placeholder",\n'
         '    "placeholder_or": "Odia placeholder",\n'
         '    "placeholder_hi": "Hindi placeholder",\n'
+        f'    "placeholder_regional": "{lang_name} placeholder",\n'
         '    "options": ["Optional button options for multi-select or quick tap"],\n'
         '    "is_terminal": false\n'
         '  }\n'
@@ -556,7 +664,7 @@ Current Intake Dialogue History:
 {history_str}
 
 Latest Patient Utterance:
-- Odia: "{latest_regional}"
+- Patient Language ({lang_name}): "{latest_regional}"
 - English Translation: "{latest_english}"
 - Total questions completed so far: {len(dialogue_history)}{rag_context}
 
@@ -608,6 +716,22 @@ Based on this clinical progression and guidelines, provide the updated clinical 
                     parsed = extract_json(text_part)
                     parsed["status"] = "success"
                     parsed["source"] = f"gemini-flash ({model_name})"
+                    if "next_question" in parsed and isinstance(parsed["next_question"], dict):
+                        nq = parsed["next_question"]
+                        if not nq.get("text_regional"):
+                            if lang_code == "od-IN":
+                                nq["text_regional"] = nq.get("text_or") or nq.get("text_en")
+                            elif lang_code == "hi-IN":
+                                nq["text_regional"] = nq.get("text_hi") or nq.get("text_en")
+                            else:
+                                nq["text_regional"] = nq.get("text_en")
+                        if not nq.get("placeholder_regional"):
+                            if lang_code == "od-IN":
+                                nq["placeholder_regional"] = nq.get("placeholder_or") or nq.get("placeholder_en")
+                            elif lang_code == "hi-IN":
+                                nq["placeholder_regional"] = nq.get("placeholder_hi") or nq.get("placeholder_en")
+                            else:
+                                nq["placeholder_regional"] = nq.get("placeholder_en")
                     logger.info("[Gemini Flash] Clinical reasoning generated successfully via %s.", model_name)
                     return parsed
             logger.warning("[Gemini Flash] %s HTTP %d. Falling back immediately to instant Medical Knowledge Graph.", model_name, resp.status_code)
@@ -617,7 +741,7 @@ Based on this clinical progression and guidelines, provide the updated clinical 
             break
 
     logger.info("[Clinical Engine] Generating instant clinical considerations & next question via Medical Knowledge Graph.")
-    return get_fallback_clinical_reasoning(dialogue_history, patient_info, latest_regional, latest_english)
+    return get_fallback_clinical_reasoning(dialogue_history, patient_info, latest_regional, latest_english, language=language)
 
 
 # ------------------------------------------------------------------
@@ -934,33 +1058,20 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
         try:
             payload = self._read_json_body()
             text = payload.get("text", "").strip()
-            language = payload.get("language", "odia").strip().lower()
+            language = payload.get("language", "odia").strip()
 
             if not text:
                 self._send_json(400, {"status": "error", "message": "Text parameter is required."})
                 return
 
-            sarvam_lang_map = {
-                "or": "od-IN", "odia": "od-IN", "od-in": "od-IN",
-                "hi": "hi-IN", "hindi": "hi-IN", "hi-in": "hi-IN",
-                "en": "en-IN", "english": "en-IN", "en-in": "en-IN",
-                "bn": "bn-IN", "bengali": "bn-IN", "bn-in": "bn-IN",
-                "te": "te-IN", "telugu": "te-IN", "te-in": "te-IN",
-                "ta": "ta-IN", "tamil": "ta-IN", "ta-in": "ta-IN",
-                "mr": "mr-IN", "marathi": "mr-IN", "mr-in": "mr-IN",
-                "gu": "gu-IN", "gujarati": "gu-IN", "gu-in": "gu-IN",
-                "kn": "kn-IN", "kannada": "kn-IN", "kn-in": "kn-IN",
-                "ml": "ml-IN", "malayalam": "ml-IN", "ml-in": "ml-IN",
-                "pa": "pa-IN", "punjabi": "pa-IN", "pa-in": "pa-IN",
-            }
-            lang_code = sarvam_lang_map.get(language, "od-IN")
+            lang_code = resolve_lang_code(language)
 
             cache_key_full = f"{language}:{text}"
             audio_b64 = TTS_CACHE.get(text) or TTS_CACHE.get(cache_key_full)
 
             if not audio_b64:
                 try:
-                    logger.info("[Server TTS] Requesting speech synthesis via Sarvam for lang=%s text='%s'", language, text[:40])
+                    logger.info("[Server TTS] Requesting speech synthesis via Sarvam for lang=%s (%s) text='%s'", language, lang_code, text[:40])
                     audio_b64 = call_sarvam_tts(text, lang_code)
                     TTS_CACHE[text] = audio_b64
                     TTS_CACHE[cache_key_full] = audio_b64
@@ -969,9 +1080,9 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
                     logger.warning("[Server TTS] Sarvam TTS call failed: %s", sarvam_err)
 
             if audio_b64:
-                self._send_json(200, {"status": "success", "audio_base64": audio_b64})
+                self._send_json(200, {"status": "success", "audio_base64": audio_b64, "language_code": lang_code})
             else:
-                self._send_json(500, {"status": "error", "message": f"TTS synthesis failed for language '{language}'"})
+                self._send_json(500, {"status": "error", "message": f"TTS synthesis failed for language '{language}' (code: {lang_code})"})
         except Exception as err:
             logger.error("[Server TTS Error] %s", err, exc_info=True)
             self._send_json(500, {"status": "error", "message": str(err)})
@@ -983,8 +1094,9 @@ class MediKiokVoiceHandler(BaseHTTPRequestHandler):
             patient_info = payload.get("patient_info", {})
             latest_regional = payload.get("latest_regional", "")
             latest_english = payload.get("latest_english", "")
+            language = payload.get("language", "or")
 
-            res = call_gemini_clinical_engine(dialogue_history, patient_info, latest_regional, latest_english)
+            res = call_gemini_clinical_engine(dialogue_history, patient_info, latest_regional, latest_english, language=language)
             self._send_json(200, res)
         except Exception as err:
             logger.error("[Server Clinical Reasoning Error] %s", err, exc_info=True)

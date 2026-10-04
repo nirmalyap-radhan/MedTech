@@ -31,7 +31,8 @@ class ClinicalReasoningService {
     dialogueHistory: ClinicalDialogueTurn[],
     patientInfo: Partial<Patient>,
     latestRegional: string,
-    latestEnglish: string
+    latestEnglish: string,
+    language: string = 'or'
   ): Promise<ClinicalReasoningResponse> {
     try {
       const payload = {
@@ -48,6 +49,7 @@ class ClinicalReasoningService {
         })),
         latest_regional: latestRegional,
         latest_english: latestEnglish,
+        language: language,
       };
 
       const response = await fetch(this.backendUrl, {
@@ -88,6 +90,8 @@ class ClinicalReasoningService {
         textEn: rawNq.text_en || 'Are you experiencing any associated symptoms?',
         textOr: rawNq.text_or || 'ଆପଣଙ୍କର ଏଥିସହ ଅନ୍ୟ କୌଣସି ଲକ୍ଷଣ ଅଛି କି?',
         textHi: rawNq.text_hi || 'क्या आपको इसके साथ कोई अन्य लक्षण भी हैं?',
+        textRegional: rawNq.text_regional,
+        placeholderRegional: rawNq.placeholder_regional,
         options: rawNq.options,
         placeholderEn: rawNq.placeholder_en,
         placeholderOr: rawNq.placeholder_or,
@@ -103,14 +107,15 @@ class ClinicalReasoningService {
       };
     } catch (err: any) {
       console.warn('[ClinicalReasoningService] Error invoking clinical reasoning API:', err);
-      return this.fallbackReasoning(dialogueHistory, latestRegional, latestEnglish);
+      return this.fallbackReasoning(dialogueHistory, latestRegional, latestEnglish, language);
     }
   }
 
   private fallbackReasoning(
     dialogueHistory: ClinicalDialogueTurn[],
     latestRegional: string,
-    latestEnglish: string
+    latestEnglish: string,
+    language: string = 'or'
   ): ClinicalReasoningResponse {
     const text = (latestEnglish + ' ' + latestRegional).toLowerCase();
     
@@ -233,6 +238,17 @@ class ClinicalReasoningService {
         placeholderEn: 'Select Yes / No',
         isTerminal: false,
       };
+    }
+
+    if (language === 'hi') {
+      nextQ.textRegional = nextQ.textHi;
+      nextQ.placeholderRegional = nextQ.placeholderHi;
+    } else if (language === 'or') {
+      nextQ.textRegional = nextQ.textOr;
+      nextQ.placeholderRegional = nextQ.placeholderOr;
+    } else if (language === 'en') {
+      nextQ.textRegional = nextQ.textEn;
+      nextQ.placeholderRegional = nextQ.placeholderEn;
     }
 
     return {

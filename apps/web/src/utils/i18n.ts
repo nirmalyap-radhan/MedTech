@@ -773,7 +773,7 @@ export function t(key: keyof TranslationStrings, lang: Language): string {
 }
 
 export function getQuestionText(
-  q: { id: string; textEn: string; textHi?: string; textOr?: string },
+  q: { id: string; textEn: string; textHi?: string; textOr?: string; textRegional?: string },
   lang: Language
 ): string {
   const qId = q.id;
@@ -903,9 +903,10 @@ export function getQuestionText(
   if (qId && translations[qId] && translations[qId][lang]) {
     return translations[qId][lang]!;
   }
-  if (lang === 'or') return q.textOr || q.textEn;
-  if (lang === 'hi') return q.textHi || q.textEn;
-  return q.textEn;
+  if (lang === 'or') return q.textOr || q.textRegional || q.textEn;
+  if (lang === 'hi') return q.textHi || q.textRegional || q.textEn;
+  if (lang === 'en') return q.textEn;
+  return q.textRegional || q.textEn;
 }
 
 export function getSymptomName(symId: string, lang: Language): string {

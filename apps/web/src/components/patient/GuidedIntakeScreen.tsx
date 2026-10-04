@@ -129,7 +129,7 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
       ? (currentQuestion.placeholderOr || currentQuestion.placeholderEn)
       : currentLanguage === 'hi'
       ? (currentQuestion.placeholderHi || currentQuestion.placeholderEn)
-      : currentQuestion.placeholderEn;
+      : (currentQuestion.placeholderRegional || currentQuestion.placeholderEn);
 
   // ------------------------------------------------------------------
   // Microphone Stop and Process
@@ -223,7 +223,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
           dialogue,
           currentDraft.patient,
           reg,
-          eng
+          eng,
+          currentLanguage
         );
         if (reasonRes.status === 'success' && reasonRes.clinicalConsiderations) {
           updateDraftClinicalConsiderations(reasonRes.clinicalConsiderations);
@@ -237,6 +238,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
               textEn: reasonRes.nextQuestion.textEn,
               textOr: reasonRes.nextQuestion.textOr,
               textHi: reasonRes.nextQuestion.textHi,
+              textRegional: reasonRes.nextQuestion.textRegional,
+              placeholderRegional: reasonRes.nextQuestion.placeholderRegional,
               options: reasonRes.nextQuestion.options,
               placeholderEn: reasonRes.nextQuestion.placeholderEn,
               placeholderOr: reasonRes.nextQuestion.placeholderOr,
@@ -258,7 +261,9 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
                 ? (reasonRes.nextQuestion.textOr || reasonRes.nextQuestion.textEn)
                 : currentLanguage === 'hi'
                 ? (reasonRes.nextQuestion.textHi || reasonRes.nextQuestion.textEn)
-                : reasonRes.nextQuestion.textEn;
+                : currentLanguage === 'en'
+                ? reasonRes.nextQuestion.textEn
+                : (reasonRes.nextQuestion.textRegional || reasonRes.nextQuestion.textEn);
             if (prefetchText) {
               ttsService.prefetch(prefetchText, currentLanguage);
             }
@@ -530,7 +535,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
         ],
         currentDraft.patient,
         symptomName,
-        symptomEn
+        symptomEn,
+        currentLanguage
       );
 
       if (reasonRes.status === 'success' && reasonRes.nextQuestion) {
@@ -546,6 +552,8 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             textEn: reasonRes.nextQuestion.textEn,
             textOr: reasonRes.nextQuestion.textOr,
             textHi: reasonRes.nextQuestion.textHi,
+            textRegional: reasonRes.nextQuestion.textRegional,
+            placeholderRegional: reasonRes.nextQuestion.placeholderRegional,
             options: reasonRes.nextQuestion.options,
             placeholderEn: reasonRes.nextQuestion.placeholderEn,
             placeholderOr: reasonRes.nextQuestion.placeholderOr,
@@ -565,7 +573,9 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
             ? (reasonRes.nextQuestion.textOr || reasonRes.nextQuestion.textEn)
             : currentLanguage === 'hi'
             ? (reasonRes.nextQuestion.textHi || reasonRes.nextQuestion.textEn)
-            : reasonRes.nextQuestion.textEn;
+            : currentLanguage === 'en'
+            ? reasonRes.nextQuestion.textEn
+            : (reasonRes.nextQuestion.textRegional || reasonRes.nextQuestion.textEn);
         if (prefetchText) {
           ttsService.prefetch(prefetchText, currentLanguage);
         }

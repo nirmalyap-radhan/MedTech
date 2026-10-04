@@ -251,10 +251,12 @@ export interface DynamicClinicalQuestion {
   textEn: string;
   textHi: string;
   textOr: string;
+  textRegional?: string;
   options?: string[];
   placeholderEn?: string;
   placeholderHi?: string;
   placeholderOr?: string;
+  placeholderRegional?: string;
   isTerminal?: boolean;
 }
 
@@ -293,12 +295,14 @@ export interface ClinicalQuestion {
   textEn: string;
   textHi: string;
   textOr: string;
+  textRegional?: string;
   category: 'Chief Concern' | 'Symptoms' | 'Differential Assessment' | 'History' | 'Medications' | 'Allergies';
   type: 'voice-text' | 'yes-no' | 'multi-select' | 'text';
   options?: string[];
   placeholderEn?: string;
   placeholderHi?: string;
   placeholderOr?: string;
+  placeholderRegional?: string;
 }
 
 export type DoctorRole =
