@@ -439,20 +439,11 @@ export const GuidedIntakeScreen: React.FC<GuidedIntakeScreenProps> = ({ onNext, 
           // When allowed, it speaks the question, and after question it listens to the user.
           if (!hasRequestedInitialMicRef.current) {
             hasRequestedInitialMicRef.current = true;
-            console.log('[VOICE] Requesting microphone permission on page entry...');
-            const permStatus = await voiceService.requestPermission();
-            console.log('[VOICE] Microphone permission result:', permStatus);
-
-            if (lifecycleIdRef.current !== thisLifecycleId) return;
-
-            if (permStatus === 'denied') {
-              setVoiceState('DENIED');
-              lastSpokenKeyRef.current = '';
-              return;
-            }
-            if (permStatus === 'unsupported') {
-              setVoiceState('UNSUPPORTED');
-              return;
+            try {
+              console.log('[VOICE] Proactively requesting microphone permission...');
+              await voiceService.requestPermission();
+            } catch {
+              // Safari defers mic prompt until explicit user interaction; proceed to speak question
             }
           }
 

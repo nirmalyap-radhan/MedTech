@@ -22,12 +22,49 @@ import { VOICE_TTS_ENDPOINT } from './apiConfig';
 
 class TTSService {
   private currentAudio: HTMLAudioElement | null = null;
+  private audioContext: AudioContext | null = null;
+  private currentBufferSource: AudioBufferSourceNode | null = null;
   private isCurrentlySpeaking: boolean = false;
   private currentRequestId: number = 0;
   private abortController: AbortController | null = null;
   private audioCache: Map<string, string> = new Map();
 
   private backendTtsUrl: string = VOICE_TTS_ENDPOINT;
+
+  constructor() {
+    this.initAudioUnlock();
+  }
+
+  /**
+   * Proactively unlock AudioContext on user interaction so Safari permits async playback
+   */
+  private initAudioUnlock(): void {
+    if (typeof window === 'undefined') return;
+    const unlock = () => {
+      try {
+        const ctx = this.getAudioContext();
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume();
+        }
+      } catch {
+        // Ignore
+      }
+    };
+    window.addEventListener('click', unlock, { passive: true });
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('touchend', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+  }
+
+  public getAudioContext(): AudioContext | null {
+    if (!this.audioContext && typeof window !== 'undefined') {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        this.audioContext = new AudioCtx();
+      }
+    }
+    return this.audioContext;
+  }
 
   /**
    * Stop any current speech synthesis, HTML5 audio, or pending network fetch immediately.
@@ -47,7 +84,18 @@ class TTSService {
       this.abortController = null;
     }
 
-    // 3. Halt and silence current HTML5 Audio
+    // 3. Stop and disconnect Web Audio BufferSource if active
+    if (this.currentBufferSource) {
+      try {
+        this.currentBufferSource.stop();
+        this.currentBufferSource.disconnect();
+      } catch {
+        // Ignore
+      }
+      this.currentBufferSource = null;
+    }
+
+    // 4. Halt and silence current HTML5 Audio
     if (this.currentAudio) {
       try {
         this.currentAudio.pause();
@@ -61,7 +109,7 @@ class TTSService {
       this.currentAudio = null;
     }
 
-    // 4. Cancel browser SpeechSynthesis
+    // 5. Cancel browser SpeechSynthesis
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       try {
         window.speechSynthesis.cancel();
@@ -212,16 +260,59 @@ class TTSService {
       return false;
     }
 
+    // Convert base64 to binary ArrayBuffer
+    let arrayBuffer: ArrayBuffer;
+    try {
+      const byteCharacters = atob(base64Audio);
+      arrayBuffer = new ArrayBuffer(byteCharacters.length);
+      const uint8 = new Uint8Array(arrayBuffer);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        uint8[i] = byteCharacters.charCodeAt(i);
+      }
+    } catch {
+      return false;
+    }
+
+    // 1. Try Web Audio API first — this bypasses Safari's strict play() restriction once unlocked!
+    const ctx = this.getAudioContext();
+    if (ctx) {
+      try {
+        if (ctx.state === 'suspended') {
+          await ctx.resume();
+        }
+        // WebKit requires a slice copy for decodeAudioData
+        const audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0));
+
+        if (signal.aborted || requestId !== this.currentRequestId) {
+          return false;
+        }
+
+        return await new Promise<boolean>((resolve) => {
+          const source = ctx.createBufferSource();
+          source.buffer = audioBuffer;
+          source.connect(ctx.destination);
+          this.currentBufferSource = source;
+
+          source.onended = () => {
+            if (this.currentBufferSource === source) {
+              this.currentBufferSource = null;
+            }
+            resolve(requestId === this.currentRequestId);
+          };
+
+          source.start(0);
+        });
+      } catch (audioCtxErr) {
+        console.warn('[TTS] Web Audio API failed, trying HTML5 Audio fallback:', audioCtxErr);
+      }
+    }
+
+    // 2. Fallback to HTML5 Audio Element
     return new Promise((resolve) => {
       let audioSrc = `data:audio/wav;base64,${base64Audio}`;
       let objectUrl: string | null = null;
       try {
-        const byteCharacters = atob(base64Audio);
-        const byteNumbers = new Uint8Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-          byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const blob = new Blob([byteNumbers], { type: 'audio/wav' });
+        const blob = new Blob([arrayBuffer], { type: 'audio/wav' });
         objectUrl = URL.createObjectURL(blob);
         audioSrc = objectUrl;
       } catch {

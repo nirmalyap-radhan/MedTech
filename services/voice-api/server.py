@@ -170,8 +170,10 @@ def call_sarvam(audio_path: str, language_code: str, mode: str) -> dict:
         ".ogg": "audio/ogg",
         ".flac": "audio/flac",
         ".m4a": "audio/mp4",
+        ".mp4": "audio/mp4",
+        ".aac": "audio/aac",
     }
-    content_type = mime_map.get(ext, "audio/wav")
+    content_type = mime_map.get(ext, "audio/mp4" if ext in (".mp4", ".m4a") else "audio/wav")
     headers = {"api-subscription-key": SARVAM_API_KEY}
 
     with open(audio_path, "rb") as audio_file:
