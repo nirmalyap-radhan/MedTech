@@ -22,9 +22,10 @@ export interface ClinicalReasoningResponse {
   errorMessage?: string;
 }
 
+import { CLINICAL_REASONING_ENDPOINT } from './apiConfig';
+
 class ClinicalReasoningService {
-  private backendUrl =
-    (import.meta.env.VITE_VOICE_API_URL || 'http://localhost:5000/api/transcribe').replace('/api/transcribe', '/api/clinical-reasoning');
+  private backendUrl = CLINICAL_REASONING_ENDPOINT;
 
   public async evaluateClinicalDialogue(
     dialogueHistory: ClinicalDialogueTurn[],

@@ -58,13 +58,7 @@ export interface OCRProgressStep {
 // Config
 // ──────────────────────────────────────────────────────────
 
-const OCR_API_BASE =
-  (import.meta.env.VITE_OCR_API_URL as string | undefined) ||
-  (import.meta.env.VITE_VOICE_API_URL as string | undefined) ||
-  'http://localhost:5000';
-
-const OCR_ENDPOINT = `${OCR_API_BASE}/api/ocr`;
-const HEALTH_ENDPOINT = `${OCR_API_BASE}/api/health`;
+import { OCR_ENDPOINT, OCR_HEALTH_ENDPOINT as HEALTH_ENDPOINT } from './apiConfig';
 
 // Timeout for OCR requests — allow up to 120s for multi-page scan processing
 const OCR_TIMEOUT_MS = 120_000;

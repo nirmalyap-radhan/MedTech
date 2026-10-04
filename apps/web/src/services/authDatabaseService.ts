@@ -7,7 +7,9 @@ const SESSIONS_STORE = 'sessions';
 const AUDIT_LOGS_STORE = 'auditLogs';
 const LOCAL_STORAGE_TOKEN_KEY = 'medikiosk_doctor_auth_token';
 
-const BACKEND_AUTH_URL = (import.meta.env.VITE_VOICE_API_URL || 'http://localhost:5000/api/transcribe').replace('/api/transcribe', '');
+import { VOICE_API_BASE_URL } from './apiConfig';
+
+const BACKEND_AUTH_URL = VOICE_API_BASE_URL;
 
 // Cryptographic helpers using browser Web Crypto API
 async function generateSalt(): Promise<string> {

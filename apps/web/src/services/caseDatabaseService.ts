@@ -14,9 +14,9 @@
 import type { PatientCase } from '../types';
 import { INITIAL_PATIENT_CASES } from '../data/mockData';
 
-const BASE_API_URL = import.meta.env.VITE_VOICE_API_URL
-  ? import.meta.env.VITE_VOICE_API_URL.replace('/api/transcribe', '')
-  : 'http://localhost:5000';
+import { VOICE_API_BASE_URL } from './apiConfig';
+
+const BASE_API_URL = VOICE_API_BASE_URL;
 
 class CaseDatabaseService {
   /**

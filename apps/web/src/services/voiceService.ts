@@ -28,10 +28,12 @@ export interface VoiceIntakeResult {
   backendSource: 'sarvam-saaras-v4';
 }
 
+import { VOICE_TRANSCRIBE_ENDPOINT } from './apiConfig';
+
 export class VoiceService {
   private mediaRecorder: MediaRecorder | null = null;
   private audioChunks: Blob[] = [];
-  private backendUrl = import.meta.env.VITE_VOICE_API_URL || 'http://localhost:5000/api/transcribe';
+  private backendUrl = VOICE_TRANSCRIBE_ENDPOINT;
   private activeStream: MediaStream | null = null;
 
   /**

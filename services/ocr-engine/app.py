@@ -10,6 +10,18 @@ from asgiref.wsgi import WsgiToAsgi
 
 flask_app = Flask(__name__)
 
+@flask_app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS, PUT, DELETE"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, Accept, Origin"
+    return response
+
+@flask_app.route("/api/ocr", methods=["OPTIONS"])
+@flask_app.route("/api/health", methods=["OPTIONS"])
+def handle_options():
+    return "", 204
+
 def load_gemini_api_key():
     key = os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
     if key:

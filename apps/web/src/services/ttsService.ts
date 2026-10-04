@@ -18,6 +18,8 @@
  *    models (which causes audio stuttering, queue hangs, and repeat bugs).
  */
 
+import { VOICE_TTS_ENDPOINT } from './apiConfig';
+
 class TTSService {
   private currentAudio: HTMLAudioElement | null = null;
   private isCurrentlySpeaking: boolean = false;
@@ -25,11 +27,7 @@ class TTSService {
   private abortController: AbortController | null = null;
   private audioCache: Map<string, string> = new Map();
 
-  private backendTtsUrl: string =
-    (import.meta.env.VITE_VOICE_API_URL || 'http://localhost:5000/api/transcribe').replace(
-      '/api/transcribe',
-      '/api/tts'
-    );
+  private backendTtsUrl: string = VOICE_TTS_ENDPOINT;
 
   /**
    * Stop any current speech synthesis, HTML5 audio, or pending network fetch immediately.
