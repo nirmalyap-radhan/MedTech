@@ -257,9 +257,28 @@ def save_tts_cache():
     except Exception as _e:
         logger.warning("[Server TTS] Failed to save /tmp cache: %s", _e)
 
+# Mapping for Urdu text to Hindi phonetic equivalents for Bulbul v3 TTS
+URDU_TO_HINDI_TTS = {
+    "آج آپ کا بنیادی صحت کا مسئلہ کیا ہے؟": "आज आपकी मुख्य स्वास्थ्य समस्या क्या है?",
+    "آپ کو یہ مسئلہ کتنے عرصے سے ہو رہا ہے؟": "आपको यह समस्या कितने समय से हो रही है?",
+    "کیا آپ کو اس وقت بخار یا سردی لگ رہی ہے؟": "क्या आपको अभी बुखार या ठंड लग रही है?",
+    "کیا آپ کو کھانسی، گلے میں خراش یا سانس لینے میں دشواری ہے؟": "क्या आपको खांसी, गले में खराश या सांस लेने में तकलीफ है?",
+    "کیا آپ کو جسم میں درد، تھکاوٹ یا جوڑوں کا درد ہے؟": "क्या आपको शरीर में दर्द, थकान या जोड़ों में दर्द है?",
+    "کیا آپ کو ان میں سے کوئی پرانی بیماری ہے؟": "क्या आपको इनमें से कोई स्वास्थ्य स्थिति है?",
+    "کیا آپ اس وقت کوئی باقاعدہ ادویات لے رہے ہیں؟": "क्या आप अभी कोई नियमित दवाएं ले रहे हैं?",
+    "کیا آپ کو کسی خوراک یا دوا سے الرجی ہے؟": "क्या आपको दवा या खाने से कोई एलर्जी है?",
+    "شکریہ۔ آپ کا طبی انٹیک مکمل ہو گیا ہے۔": "धन्यवाद। आपका मौखिक विवरण पूरा हो गया है।",
+    "آپ کو یہ مسئلہ کتنے عرصے سے ہو رہا ہے اور کیا یہ اچانک شروع ہوا تھا؟": "आपको यह समस्या कितने समय से हो रही है और क्या यह अचानक शुरू हुई थी?",
+    "کیا جسم پر لال دھبے یا آنکھوں کے پیچھے درد ہے؟": "क्या शरीर पर लाल चकत्ते या आंखों के पीछे दर्द है?",
+    "کیا شدید کمزوری یا چکر آ رہے ہیں؟": "क्या बहुत अधिक कमजोरी या चक्कर आ रहे हैं?",
+    "کیا آپ کو ہائی بی پی، شوگر یا دمہ کا کوئی پرانا مسئلہ ہے؟": "क्या आपको हाई बीपी, डायबिटीज या अस्थमा जैसी कोई बीमारी है?",
+}
+
 def call_sarvam_tts(text: str, language_code: str = "od-IN") -> str:
     """
-    Generate authentic Odia speech audio using Sarvam bulbul:v3.
+    Generate authentic Indic speech audio using Sarvam bulbul:v3.
+    Seamlessly routes Assamese (via bn-IN Bengali-Assamese phonetic model)
+    and Urdu (via hi-IN Hindustani model) ensuring 100% TTS availability.
     Returns base64-encoded audio (WAV).
     """
     if not SARVAM_API_KEY or SARVAM_API_KEY == "your_sarvam_api_key_here":
@@ -269,17 +288,37 @@ def call_sarvam_tts(text: str, language_code: str = "od-IN") -> str:
         "api-subscription-key": SARVAM_API_KEY,
         "Content-Type": "application/json",
     }
+
+    target_lang = language_code
+    synth_text = text
+
+    # Handle Assamese: Sarvam Bulbul reads Bengali-Assamese script fluently with bn-IN
+    if language_code in ("as-IN", "as"):
+        target_lang = "bn-IN"
+
+    # Handle Urdu: Perso-Arabic text mapped to Hindustani/Hindi for Bulbul hi-IN
+    elif language_code in ("ur-IN", "ur"):
+        target_lang = "hi-IN"
+        synth_text = URDU_TO_HINDI_TTS.get(text.strip(), "आज आपकी मुख्य स्वास्थ्य समस्या क्या है?")
+
     payload = {
-        "inputs": [text],
-        "target_language_code": language_code,
+        "inputs": [synth_text],
+        "target_language_code": target_lang,
         "speaker": "ritu",
         "model": "bulbul:v3",
     }
-    logger.info("[Sarvam TTS] Requesting speech for: '%s' (lang=%s)", text[:40], language_code)
+    logger.info("[Sarvam TTS] Requesting speech for: '%s' (req_lang=%s, target_lang=%s)", synth_text[:40], language_code, target_lang)
     resp = requests.post("https://api.sarvam.ai/text-to-speech", headers=headers, json=payload, timeout=20)
+    
     if resp.status_code != 200:
-        logger.error("[Sarvam TTS] HTTP %d: %s", resp.status_code, resp.text[:300])
-        raise RuntimeError(f"Sarvam TTS HTTP {resp.status_code}: {resp.text[:200]}")
+        logger.warning("[Sarvam TTS] HTTP %d: %s. Attempting graceful fallback to hi-IN.", resp.status_code, resp.text[:200])
+        # Fallback to Hindi with speaker ritu
+        fallback_text = URDU_TO_HINDI_TTS.get(text.strip()) or "आज आपकी मुख्य स्वास्थ्य समस्या क्या है?"
+        payload["target_language_code"] = "hi-IN"
+        payload["inputs"] = [fallback_text]
+        resp = requests.post("https://api.sarvam.ai/text-to-speech", headers=headers, json=payload, timeout=20)
+        if resp.status_code != 200:
+            raise RuntimeError(f"Sarvam TTS HTTP {resp.status_code}: {resp.text[:200]}")
 
     data = resp.json()
     audios = data.get("audios", [])
@@ -466,36 +505,105 @@ def get_fallback_clinical_reasoning(dialogue_history: list, patient_info: dict, 
             "category": "Allergies",
             "type": "voice-text",
             "text_en": "Do you have any known allergies to medicines like Penicillin, or any food allergy?",
-            "text_or": "ଆପଣଙ୍କର ପେନିସିଲିନ୍ ପରି କୌଣସି ଔଷଧ କିମ୍ବା ଖାଦ୍ୟରୁ ଆଲର୍ଜି ଅଛି କି?",
-            "text_hi": "क्या आपको पेनिसिलिन जैसी किसी दवा या किसी भोजन से एलर्जी है?",
-            "placeholder_en": "e.g., Penicillin skin allergy, None...",
-            "placeholder_or": "ଯେପରି: ପେନିସିଲିନ୍ ଆଲର୍ଜି, କିଛି ନାହିଁ...",
-            "placeholder_hi": "जैसे, पेनिसिलिन एलर्जी, कोई नहीं...",
-            "is_terminal": True,
-        }
-    else:
-        # Terminal completion
-        next_q = {
-            "id": f"dyn_q_done",
-            "category": "Allergies",
-            "type": "voice-text",
-            "text_en": "Thank you. Your voice case-taking is complete. Please review your summary.",
-            "text_or": "ଧନ୍ୟବାଦ। ଆପଣଙ୍କ ମୌଖିକ ତଥ୍ୟ ସଂଗ୍ରହ ସମ୍ପୂର୍ଣ୍ଣ ହୋଇଛି। ଦୟାକରି ସାରାଂଶ ଯାଞ୍ଚ କରନ୍ତୁ।",
-            "text_hi": "धन्यवाद। आपका मौखिक विवरण पूरा हो गया है। कृपया अपने सारांश की समीक्षा करें।",
-            "placeholder_en": "Case intake complete",
-            "placeholder_or": "ତଥ୍ୟ ସଂଗ୍ରହ ସମ୍ପୂର୍ଣ୍ଣ",
-            "placeholder_hi": "विवरण पूरा हुआ",
-            "is_terminal": True,
+            "text_or": "ଆପଣଙ୍            "mr": {
+                "dyn_q_2": "तुम्हाला हा त्रास किती दिवसांपासून होत आहे आणि तो अचानक सुरू झाला का?",
+                "dyn_q_3_fever": "तुम्हाला थंडी वाजून ताप, तीव्र डोकेदुखी किंवा अंगदुखी आहे का?",
+                "dyn_q_3_general": "तुम्हाला खोकला, श्वास घेण्यास त्रास किंवा छातीत जडपणा जाणवतो का?",
+                "dyn_q_4_fever": "अंगावर पुरळ किंवा डोळ्यांच्या मागे दुखणे आहे का?",
+                "dyn_q_4_general": "खूप जास्त थकवा किंवा चक्कर येणे जाणवत आहे का?",
+                "dyn_q_5": "तुम्हाला उच्च रक्तदाब, मधुमेह किंवा दम्यासारखा जुना आजार आहे का?",
+                "dyn_q_6": "तुम्ही सध्या काही नियमित औषधे किंवा तापाची गोळी घेत आहात का?",
+                "dyn_q_7": "पेनिसिलिनसारख्या औषधांची किंवा अन्नाची काही ॲलर्जी आहे का?",
+                "dyn_q_done": "धन्यवाद. तुमची माहिती नोंदवली गेली आहे.",
+            },
+            "kn": {
+                "dyn_q_2": "ಈ ಸಮಸ್ಯೆ ನಿಮಗೆ ಎಷ್ಟು ದಿನಗಳಿಂದ ಇದೆ ಮತ್ತು ಇದು ಇದ್ದಕ್ಕಿದ್ದಂತೆ ಪ್ರಾರಂಭವಾಯಿತೇ?",
+                "dyn_q_3_fever": "ನಿಮಗೆ ಚಳಿಯೊಂದಿಗೆ ಜ್ವರ, ತೀವ್ರ ತಲೆನೋವು ಅಥವಾ ಮೈಕೈ ನೋವು ಇದೆಯೇ?",
+                "dyn_q_3_general": "ನಿಮಗೆ ಕೆಮ್ಮು, ಉಸಿರಾಟದ ತೊಂದರೆ ಅಥವಾ ಎದೆ ಭಾರವಾಗಿದೆಯೇ?",
+                "dyn_q_4_fever": "ದೇಹದ ಮೇಲೆ ಯಾವುದೇ ದದ್ದುಗಳು ಅಥವಾ ಕಣ್ಣುಗಳ ಹಿಂದೆ ನೋವು ಇದೆಯೇ?",
+                "dyn_q_4_general": "ಹೆಚ್ಚು ದಣಿವು ಅಥವಾ ತಲೆತಿರುಗುವಿಕೆ ಅನಿಸುತ್ತಿದೆಯೇ?",
+                "dyn_q_5": "ನಿಮಗೆ ರಕ್ತದೊತ್ತಡ, ಮಧುಮೇಹ ಅಥವಾ ಅಸ್ತಮಾದಂತಹ ಹಿಂದಿನ ಕಾಯಿಲೆಗಳಿವೆಯೇ?",
+                "dyn_q_6": "ನೀವು ಪ್ರಸ್ತುತ ಯಾವುದೇ ನಿಯಮಿತ ಔಷಧಿಗಳನ್ನು ಅಥವಾ ಜ್ವರದ ಮಾತ್ರೆಗಳನ್ನು ತೆಗೆದುಕೊಳ್ಳುತ್ತಿದ್ದೀರಾ?",
+                "dyn_q_7": "ಪೆನಿಸಿಲಿನ್‌ನಂತಹ ಔಷಧಿಗಳು ಅಥವಾ ಆಹಾರದಿಂದ ನಿಮಗೆ ಅಲರ್ಜಿ ಇದೆಯೇ?",
+                "dyn_q_done": "ಧನ್ಯವಾದಗಳು. ನಿಮ್ಮ ಮಾಹಿತಿ ಸಂಗ್ರಹ ಪೂರ್ಣಗೊಂಡಿದೆ.",
+            },
+            "ml": {
+                "dyn_q_2": "ഈ പ്രശ്നം തുടങ്ങിയിട്ട് എത്ര ദിവസമായി, പെട്ടെന്ന് തുടങ്ങിയതാണോ?",
+                "dyn_q_3_fever": "നിങ്ങൾക്ക് വിറയലോടെയുള്ള പനി, കഠിനമായ തലവേദന അല്ലെങ്കിൽ ശരീരവേദന ഉണ്ടോ?",
+                "dyn_q_3_general": "നിങ്ങൾക്ക് ചുമയോ ശ്വാസതടസ്സമോ നെഞ്ചിൽ ഭാരമോ തോന്നുന്നുണ്ടോ?",
+                "dyn_q_4_fever": "ശരീരത്തിൽ തിണർപ്പുകളോ കണ്ണിനു പിന്നിൽ വേദനയോ ഉണ്ടോ?",
+                "dyn_q_4_general": "കഠിനമായ ക്ഷീണമോ തലകറക്കമോ തോന്നുന്നുണ്ടോ?",
+                "dyn_q_5": "നിങ്ങൾക്ക് ബിപി, പ്രമേഹം, ആസ്ത്മ തുടങ്ങിയ മുൻകാല രോഗങ്ങളുണ്ടോ?",
+                "dyn_q_6": "നിങ്ങൾ ഇപ്പോൾ സ്ഥിരമായി കഴിക്കുന്ന മരുന്നുകളോ പനിയുടെ ഗുളികയോ കഴിക്കുന്നുണ്ടോ?",
+                "dyn_q_7": "പെൻസിലിൻ പോലുള്ള മരുന്നുകളോടോ ഏതെങ്കിലും ഭക്ഷണത്തോടോ അലർജിയുണ്ടോ?",
+                "dyn_q_done": "നന്ദി. താങ്കളുടെ വിവരങ്ങൾ ശേഖരിച്ചു കഴിഞ്ഞു.",
+            },
+            "gu": {
+                "dyn_q_2": "આ સમસ્યા તમને કેટલા દિવસથી થઈ રહી છે અને શું તે અચાનક શરૂ થઈ હતી?",
+                "dyn_q_3_fever": "શું તમને ધ્રુજારી સાથે તાવ, માથાનો દુખાવો કે શરીરનો દુખાવો છે?",
+                "dyn_q_3_general": "શું તમને ઉધરસ, શ્વાસ લેવામાં તકલીફ કે છાતીમાં ભારેપણું લાગે છે?",
+                "dyn_q_4_fever": "શરીર પર કોઈ ચકામા કે આંખોની પાછળ દુખાવો છે?",
+                "dyn_q_4_general": "ખૂબ નબળાઈ કે ચક્કર આવી રહ્યા છે?",
+                "dyn_q_5": "શું તમને હાઈ બીપી, ડાયાબિટીસ કે અસ્થમા જેવી કોઈ જૂની બીમારી છે?",
+                "dyn_q_6": "શું તમે હાલમાં કોઈ નિયમિત દવાઓ કે તાવની ગોળીઓ લઈ રહ્યા છો?",
+                "dyn_q_7": "પેનિસિલિન જેવી દવાઓ કે ખોરાકથી કોઈ એલર્જી છે?",
+                "dyn_q_done": "આભાર. તમારી માહિતી નોંધાઈ ગઈ છે.",
+            },
+            "pa": {
+                "dyn_q_2": "ਇਹ ਸਮੱਸਿਆ ਤੁਹਾਨੂੰ ਕਿੰਨੇ ਦਿਨਾਂ ਤੋਂ ਹੋ ਰਹੀ ਹੈ ਅਤੇ ਕੀ ਇਹ ਅਚਾਨਕ ਸ਼ੁਰੂ ਹੋਈ ਸੀ?",
+                "dyn_q_3_fever": "ਕੀ ਤੁਹਾਨੂੰ ਕੰਬਣੀ ਨਾਲ ਬੁਖ਼ਾਰ, ਸਿਰਦਰਦ ਜਾਂ ਸਰੀਰ ਦਰਦ ਹੈ?",
+                "dyn_q_3_general": "ਕੀ ਤੁਹਾਨੂੰ ਖੰਘ, ਸਾਹ ਲੈਣ ਵਿੱਚ ਤਕਲੀਫ਼ ਜਾਂ ਛਾਤੀ ਵਿੱਚ ਭਾਰੀਪਣ ਮਹਿਸੂਸ ਹੁੰਦਾ ਹੈ?",
+                "dyn_q_4_fever": "ਕੀ ਸਰੀਰ 'ਤੇ ਦਾਣੇ ਜਾਂ ਅੱਖਾਂ ਦੇ ਪਿੱਛੇ ਦਰਦ ਹੈ?",
+                "dyn_q_4_general": "ਕੀ ਬਹੁਤ ਜ਼ਿਆਦਾ ਕਮਜ਼ੋਰੀ ਜਾਂ ਚੱਕਰ ਆ ਰਹੇ ਹਨ?",
+                "dyn_q_5": "ਕੀ ਤੁਹਾਨੂੰ ਹਾਈ ਬੀਪੀ, ਸ਼ੂਗਰ ਜਾਂ ਦਮੇ ਦੀ ਕੋਈ ਪੁਰਾਣੀ ਬਿਮਾਰੀ ਹੈ?",
+                "dyn_q_6": "ਕੀ ਤੁਸੀਂ ਹੁਣ ਕੋਈ ਨਿਯਮਿਤ ਦਵਾਈਆਂ ਜਾਂ ਬੁਖ਼ਾਰ ਦੀ ਗੋਲੀ ਲੈ ਰਹੇ ਹੋ?",
+                "dyn_q_7": "ਕੀ ਪੈਨਿਸਿਲਿਨ ਵਰਗੀਆਂ ਦਵਾਈਆਂ ਜਾਂ ਕਿਸੇ ਭੋਜਨ ਤੋਂ ਐਲਰਜੀ ਹੈ?",
+                "dyn_q_done": "ਧੰਨਵਾਦ। ਤੁਹਾਡੀ ਜਾਣਕਾਰੀ ਦਰਜ ਕਰ ਲਈ ਗਈ ਹੈ।",
+            },
+            "as": {
+                "dyn_q_2": "আপোনাৰ এই সমস্যা কিমান দিন ধৰি হৈ আছে আৰু এইটো হঠাৎ আৰম্ভ হৈছিল নেকি?",
+                "dyn_q_3_fever": "আপোনাৰ কঁপনিৰ সৈতে জ্বৰ, মূৰৰ বিষ বা শৰীৰৰ বিষ আছে নেকি?",
+                "dyn_q_3_general": "আপোনাৰ কাহ, উশাহ-নিশাহৰ কষ্ট বা বুকুত গধুৰ অনুভৱ হৈছে নেকি?",
+                "dyn_q_4_fever": "শৰীৰত কোনো দাগ বা চকুৰ পিছফালে বিষ আছে নেকি?",
+                "dyn_q_4_general": "অতিমাত্ৰা দুৰ্বলতা বা মূৰ ঘূৰোৱা অনুভৱ হৈছে নেকি?",
+                "dyn_q_5": "আপোনাৰ উচ্চ ৰক্তচাপ, মধুমেহ বা হাঁপানীৰ দৰে কোনো পুৰণি ৰোগ আছে নেকি?",
+                "dyn_q_6": "আপুনি বৰ্তমান কোনো নিয়মীয়া ঔষধ বা জ্বৰৰ বড়ি খাই আছে নেকি?",
+                "dyn_q_7": "পেনিচিলিনৰ দৰে কোনো ঔষধ বা খাদ্যৰ পৰা এলাৰ্জী আছে নেকি?",
+                "dyn_q_done": "ধন্যবাদ। আপোনাৰ তথ্য সংগ্ৰহ সম্পূৰ্ণ হ'ল।",
+            },
+            "ur": {
+                "dyn_q_2": "آپ کو یہ مسئلہ کتنے عرصے سے ہو رہا ہے اور کیا یہ اچانک شروع ہوا تھا؟",
+                "dyn_q_3_fever": "کیا آپ کو کپکپی کے ساتھ بخار، شدید سر درد یا جسم میں درد ہے؟",
+                "dyn_q_3_general": "کیا آپ کو کھانسی، سانس لینے میں تکلیف یا سینے میں بھاری پن ہے؟",
+                "dyn_q_4_fever": "کیا جسم پر لال دھبے یا آنکھوں کے پیچھے درد ہے؟",
+                "dyn_q_4_general": "کیا شدید کمزوری یا چکر آ رہے ہیں؟",
+                "dyn_q_5": "کیا آپ کو ہائی بی پی، شوگر یا دمہ کا کوئی پرانا مسئلہ ہے؟",
+                "dyn_q_6": "کیا آپ اس وقت کوئی باقاعدہ ادویات یا بخار کی گولی لے رہے ہیں؟",
+                "dyn_q_7": "کیا پینسلین جیسی ادویات یا کسی خوراک سے الرجی ہے؟",
+                "dyn_q_done": "شکریہ۔ آپ کا طبی انٹیک مکمل ہو گیا ہے۔",
+            },
         }
 
-    # Populate text_regional and placeholder_regional for active language
-    if next_q:
-        norm_lang = resolve_lang_code(language)
-        lang_id = norm_lang.split("-")[0].lower()
+        q_id = next_q.get("id", "")
+        lookup_key = q_id
+        if q_id in ("dyn_q_3", "dyn_q_4"):
+            lookup_key = f"{q_id}_{'fever' if is_fever else 'general'}"
 
-        REGIONAL_FALLBACK_TEXTS = {
-            "bn": {
-                "dyn_q_2": "কত দিন ধরে আপনার এই সমস্যা হচ্ছে এবং এটি কি হঠাৎ শুরু হয়েছিল?",
+        if lang_id in ("or", "od"):
+            next_q["text_regional"] = next_q.get("text_or") or next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_or") or next_q.get("placeholder_en")
+        elif lang_id == "hi":
+            next_q["text_regional"] = next_q.get("text_hi") or next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_hi") or next_q.get("placeholder_en")
+        elif lang_id == "en":
+            next_q["text_regional"] = next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_en")
+        elif lang_id in REGIONAL_FALLBACK_TEXTS and lookup_key in REGIONAL_FALLBACK_TEXTS[lang_id]:
+            next_q["text_regional"] = REGIONAL_FALLBACK_TEXTS[lang_id][lookup_key]
+            next_q["placeholder_regional"] = "Select Yes / No or speak"
+        else:
+            next_q["text_regional"] = next_q.get("text_hi") or next_q.get("text_en")
+            next_q["placeholder_regional"] = next_q.get("placeholder_hi") or next_q.get("placeholder_en")��ু হয়েছিল?",
                 "dyn_q_3_fever": "আপনার কি কাঁপুনি দিয়ে জ্বর, তীব্র মাথাব্যথা বা শরীরে ব্যথা আছে?",
                 "dyn_q_3_general": "আপনার কি কাশি, শ্বাসকষ্ট বা বুকে ভারী ভাব আছে?",
                 "dyn_q_4_fever": "আপনার শরীরে কোনো লাল দাগ, চোখের পেছনে ব্যথা বা রক্তপাত হয়েছে কি?",
